@@ -1,0 +1,9 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Passload.Core/Passload.Core.csproj" />
+    <Project Path="src/Passload/Passload.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Passload.Checks/Passload.Checks.csproj" />
+  </Folder>
+</Solution>

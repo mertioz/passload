@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <ApplicationIcon>Assets/Passload.ico</ApplicationIcon>
+    <AssemblyName>Passload</AssemblyName>
+    <Description>Partage de fichiers temporaire entre ordinateurs.</Description>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Passload.Core/Passload.Core.csproj" />
+    <Resource Include="Assets/Fonts/*.ttf" />
+    <Resource Include="Assets/Passload.ico" />
+    <EmbeddedResource Include="../../LICENSE" LogicalName="Passload.LICENSE" />
+    <EmbeddedResource Include="../../licenses/*.txt" />
+  </ItemGroup>
+</Project>
