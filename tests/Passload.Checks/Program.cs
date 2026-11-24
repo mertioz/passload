@@ -7,6 +7,12 @@ using Mono.Nat;
 using Passload.Checks;
 using Passload.Core;
 
+if (args is ["--browser-fixture", var directory])
+{
+    await BrowserFixture.RunAsync(directory);
+    return;
+}
+
 var passed = 0;
 void Check(bool condition, string label)
 {

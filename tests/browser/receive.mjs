@@ -6,10 +6,11 @@ import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {chromium, firefox, webkit} from "playwright-core";
 import {files} from "./fixtures.mjs";
+import {testChannel} from "./ci-channel.mjs";
 
-const link = new URL(process.env.PASSLOAD_SMOKE_LINK || "about:blank");
-if (link.origin !== "https://mertioz.github.io" || link.pathname !== "/passload/recevoir/" || !link.hash.startsWith("#p2.")) throw new Error("Une invitation de test Passload est requise.");
 const name = process.env.PASSLOAD_BROWSER || "chromium";
+const link = new URL(await testChannel(name,"invite"));
+if (link.origin !== "https://mertioz.github.io" || link.pathname !== "/passload/recevoir/" || !link.hash.startsWith("#p2.")) throw new Error("Une invitation de test Passload est requise.");
 const engine = {chromium,firefox,webkit}[name];
 if (!engine) throw new Error("Navigateur de test inconnu.");
 const output = await mkdtemp(join(tmpdir(),"passload-browser-"));
@@ -48,4 +49,7 @@ try {
       console.log("Trois fichiers et les trois entrées du ZIP vérifiés par SHA-256.");
     } finally { await context.close(); }
   }
-} finally { await browser.close(); await rm(output,{recursive:true,force:true}); }
+} finally {
+  await browser.close(); await rm(output,{recursive:true,force:true});
+  await testChannel(name,"done","finished");
+}

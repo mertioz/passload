@@ -48,7 +48,7 @@ dotnet publish src/Passload/Passload.csproj -c Release -r win-x64 -p:PublishProf
 
 Les tests locaux vérifient notamment l’expiration, la révocation, les réponses HTTPS, le ZIP et les redirections simulées. L’option `--network` du programme de vérification teste aussi l’interface réelle et l’ouverture temporaire d’un port avec un fichier de démonstration.
 
-Les tests de navigateur utilisent exclusivement trois fichiers synthétiques. Exécutez `node tests/browser/fixtures.mjs <dossier-vide>`, partagez ces trois fichiers avec Passload et fournissez l’invitation dans le secret temporaire `PASSLOAD_SMOKE_LINK` du dépôt de test. Le workflow manuel **Réception depuis un autre réseau** vérifie les fichiers et chaque entrée du ZIP par SHA-256. La variante Chromium bloque aussi WebRTC pour exercer le relais. Révoquez le partage et retirez le secret après l’essai.
+Le workflow manuel **Réception depuis un autre réseau** démarre un PC Windows expéditeur et trois machines de réception indépendantes. Il génère trois fichiers synthétiques, vérifie chaque téléchargement et les entrées du ZIP par SHA-256, puis ferme le partage. Chromium teste également le relais avec WebRTC désactivé. Aucun compte ni secret applicatif n’est nécessaire pour exécuter ce test.
 
 ## Licence
 

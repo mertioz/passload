@@ -1,6 +1,5 @@
 using System.IO;
 using System.Net;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows.Controls;
@@ -39,26 +38,19 @@ internal sealed class InternetSharing(Grid container) : IAsyncDisposable
         uri.AbsolutePath.TrimEnd('/') == Viewer.AbsolutePath.TrimEnd('/') &&
         Regex.IsMatch(uri.Fragment, @"^#p2\.[A-Za-z0-9_-]{87}\.[A-Za-z0-9_-]{43}\.\d{10,13}$");
 
-    private static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+','-').Replace('/','_');
-
     public async Task<Share> CreateAsync(string[] paths, TimeSpan duration, bool allowRelay, CancellationToken stop)
     {
         _idleSince = null;
         var files = await Task.Run(() => SharedFile.Select(paths), stop);
         await EnsureEngineAsync(stop);
         stop.ThrowIfCancellationRequested();
-        using var owner = ECDiffieHellman.Create(ECCurve.NamedCurves.nistP256);
-        var point = owner.ExportParameters(false).Q;
-        var room = Base64Url([4, .. point.X!, .. point.Y!]);
-        var key = Base64Url(RandomNumberGenerator.GetBytes(32));
-        var until = DateTimeOffset.UtcNow.Add(duration).ToUnixTimeMilliseconds();
-        var link = new Uri(Viewer, $"#p2.{room}.{key}.{until}");
-        var share = _catalog.Add(files, duration, ShareScope.Internet, Viewer, "", "Internet", publicLink:link);
+        var invitation = InternetInvitation.Create(Viewer,duration);
+        var share = _catalog.Add(files, duration, ShareScope.Internet, Viewer, "", "Internet", publicLink:invitation.Link);
         var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         _starting[share.Token] = connected;
         try
         {
-            Post(new {op="start", token=share.Token, room, owner=Base64Url(owner.ExportPkcs8PrivateKey()), key, until, relay=allowRelay});
+            Post(invitation.StartMessage(share.Token,allowRelay));
             await connected.Task.WaitAsync(TimeSpan.FromSeconds(17), stop);
             return share;
         }
