@@ -1,12 +1,12 @@
 import {Peer, deadline, deferred, decode, control, asControl} from "./wire.js";
 import {Meeting} from "./pipe.js";
-import {prepareDownloads, saveRemote} from "./save.js";
+import {chooseDestination, saveRemote} from "./save.js";
 
 const el = id => document.getElementById(id);
 const invite = location.hash.match(/^#p2\.([A-Za-z0-9_-]{87})\.([A-Za-z0-9_-]{43})\.(\d{10,13})$/);
 const roomId = invite?.[1], key = invite?.[2], until = Number(invite?.[3]);
 const offline = "Le partage est arrêté, le lien a expiré ou le PC expéditeur est hors ligne.";
-let current, busy = false;
+let current, busy = false, archiveEstimate = 0;
 const show = text => { el("status").textContent = text; };
 const formatSize = n => {
   if (!n) return "0 o";
@@ -34,6 +34,7 @@ class Incoming {
     try { ready = await deadline(socket.ready.promise, 18_000, offline); }
     catch { throw new Error(offline); }
     this.canRelay = ready.relay;
+    show("Recherche d’une connexion directe…");
     let direct = false;
     if (this.peer.pc && !(forceRelay && ready.relay)) {
       try {
@@ -43,6 +44,7 @@ class Incoming {
     }
     if (!direct && !ready.relay) throw new Error("Les réseaux des deux appareils bloquent la connexion directe. Réessayez depuis un autre réseau.");
     const mode = direct ? "direct" : "relay";
+    if (!direct) show("Ouverture du relais chiffré…");
     this.mode = mode;
     this.peer.select(mode);
     await socket.signal(ready.peer, {use:mode});
@@ -134,11 +136,12 @@ async function download(file) {
   busy = true; enableButtons(false);
   let source;
   try {
-    source = await current.open(file ? file.id : "zip");
     const name = file?.name || "Passload.zip";
-    await saveRemote(source, name, file?.size ?? null, file ? "application/octet-stream" : "application/zip", bytes => show("Téléchargement · " + formatSize(bytes)));
+    const destination = await chooseDestination(name, file?.size ?? archiveEstimate);
+    source = await current.open(file ? file.id : "zip");
+    await saveRemote(source, name, file?.size ?? null, file ? "application/octet-stream" : "application/zip", bytes => show("Téléchargement · " + formatSize(bytes)), destination);
     show("Téléchargement terminé.");
-  } catch (err) { show(err.message); }
+  } catch (err) { show(err.name === "AbortError" ? "Téléchargement annulé." : err.message); }
   finally { await source?.cancel(); busy = false; if (current && !current.closed) enableButtons(true); }
 }
 async function connect(forceRelay = false) {
@@ -156,6 +159,7 @@ async function connect(forceRelay = false) {
     if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.some((f,i) =>
       f.id !== i || typeof f.name !== "string" || !Number.isSafeInteger(f.size) || f.size < 0)) throw new Error("Liste de fichiers invalide.");
     el("title").textContent = manifest.files.length === 1 ? "Un fichier partagé" : manifest.files.length + " fichiers partagés";
+    archiveEstimate = manifest.files.reduce((total,file)=>total + file.size + 256, 0);
     el("list").replaceChildren();
     for (const file of manifest.files) {
       const row = document.createElement("li"), details = document.createElement("div");
@@ -175,7 +179,6 @@ async function connect(forceRelay = false) {
     show(err.message || offline); el("retry").hidden = false;
   }
 }
-prepareDownloads();
 el("retry").onclick = () => void connect();
 el("zip").onclick = () => void download(null);
 window.addEventListener("pagehide", () => current?.drop());

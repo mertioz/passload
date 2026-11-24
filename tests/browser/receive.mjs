@@ -36,7 +36,8 @@ try {
         const action = page.getByRole("button",{name:label,exact:true});
         const [download] = await Promise.all([page.waitForEvent("download",{timeout:60_000}),action.click()]);
         const target = join(output,file);
-        await download.saveAs(target);
+        try { await download.saveAs(target); }
+        catch { throw new Error("Échec de l’enregistrement de "+file+". "+await page.locator("#status").innerText()); }
         assert.equal(download.suggestedFilename(),file);
         if (expected !== null) assert.equal(sha(await readFile(target)),sha(expected));
         else {
@@ -45,6 +46,7 @@ try {
           assert.deepEqual(hashes,Object.fromEntries([...files].map(([n,b])=>[n,sha(b)])));
         }
         await page.waitForFunction(()=>document.querySelector("#status").textContent==="Téléchargement terminé.",null,{timeout:25_000});
+        console.log("Fichier vérifié · "+file);
       }
       console.log("Trois fichiers et les trois entrées du ZIP vérifiés par SHA-256.");
     } finally { await context.close(); }

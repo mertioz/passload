@@ -1,71 +1,95 @@
-// Browser download manager and service worker move one bounded block at a time.
-import {deferred, deadline} from "./wire.js";
+const memoryLimit = 1024 * 1024;
+let previous;
 
-let registration;
-export function prepareDownloads() {
-  if (!navigator.serviceWorker) return;
-  registration = navigator.serviceWorker.register(new URL("./sw.js",import.meta.url)).then(() => navigator.serviceWorker.ready);
-  registration.catch(() => {});
+function createDiskWriter() {
+  const worker = new Worker(new URL("./disk.js",import.meta.url));
+  const call = (op, buffer) => new Promise((resolve,reject)=>{
+    const timer = setTimeout(()=>reject(new Error("Le stockage local ne répond pas.")), 90_000);
+    worker.onmessage = e => {
+      clearTimeout(timer);
+      if (e.data.ok) resolve(e.data.result);
+      else reject(new Error("Le navigateur ne peut pas écrire sur le disque de cet appareil."));
+    };
+    worker.onerror = () => { clearTimeout(timer); reject(new Error("Le stockage local est indisponible.")); };
+    worker.postMessage({op,buffer}, buffer ? [buffer] : []);
+  });
+  return {call, close:()=>worker.terminate()};
 }
 
-export async function saveRemote(source, filename, size, mime, progress) {
-  const ready = registration && await deadline(registration, 8000, "Téléchargement indisponible.").catch(() => null);
-  if (ready?.active) {
-    const port = new MessageChannel();
-    const ticket = crypto.randomUUID();
-    const ack = deferred(), finished = deferred();
-    finished.promise.catch(() => {});
-    let received = 0;
-    let timer;
-    const cancel = () => { clearTimeout(timer); void source.cancel(); port.port1.close(); };
-    const arm = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => { cancel(); finished.reject(new Error("Le téléchargement a été interrompu.")); }, 120_000);
-    };
-    port.port1.onmessage = async e => {
+function present(blob, filename, temporaryName) {
+  const url = URL.createObjectURL(blob);
+  const action = document.getElementById("saved");
+  action.href = url; action.download = filename;
+  action.hidden = false; action.textContent = "Enregistrer à nouveau";
+  action.click();
+  const entry = {url};
+  previous = entry;
+  // Keep the snapshot alive while the browser copies it to Downloads.
+  const retention = Math.min(8 * 86400_000,Math.max(10 * 60_000, blob.size / 512_000 * 1000));
+  setTimeout(async () => {
+    URL.revokeObjectURL(url);
+    if (previous === entry) { action.hidden = true; action.removeAttribute("href"); }
+    if (temporaryName) {
       try {
-        if (e.data === "ready") { ack.resolve(); return; }
-        if (e.data === "cancel") throw new Error("Téléchargement annulé.");
-        if (e.data === "saved") { finished.resolve(); return; }
-        if (e.data !== "pull") return;
-        arm();
-        const {bytes, done} = await source.next();
-        received += bytes.byteLength;
-        if (size !== null && (received > size || (done && received !== size))) throw new Error("Téléchargement incomplet.");
-        progress(received);
-        port.port1.postMessage({buffer:bytes.buffer, done}, [bytes.buffer]);
-      } catch (error) {
-        port.port1.postMessage({error:true});
-        finished.reject(error);
-      }
-    };
-    ready.active.postMessage({op:"download", ticket, filename, size, mime}, [port.port2]);
-    try {
-      await deadline(ack.promise, 6000, "Le navigateur n’a pas préparé le téléchargement.");
-      const a = document.createElement("a");
-      a.href = new URL("./download/" + ticket,import.meta.url);
-      // A normal navigation reaches the service worker. The attachment header starts the browser download.
-      document.body.append(a); a.click(); a.remove();
-      arm();
-      await finished.promise;
-      return;
-    } finally { cancel(); }
-  }
-  // A browser which disables service workers can still save small transfers.
-  const chunks = [];
-  let count = 0;
+        const root = await navigator.storage.getDirectory();
+        const directory = await root.getDirectoryHandle("passload-transferts");
+        await directory.removeEntry(temporaryName);
+      } catch { /* A later visit also cleans up old temporary snapshots. */ }
+    }
+  },retention);
+}
+
+export function chooseDestination(filename, estimate) {
+  if (estimate >= 256 * 1024 * 1024 && typeof window.showSaveFilePicker === "function")
+    return window.showSaveFilePicker({suggestedName:filename});
+  return null;
+}
+
+export async function saveRemote(source, filename, size, mime, progress, destination) {
+  let chunks = [], count = 0, disk, writable, completed = false, diskUnavailable = false;
+  document.getElementById("saved").hidden = true;
   try {
+    if (destination) writable = await destination.createWritable();
     while (true) {
-      const {bytes, done} = await source.next();
-      count += bytes.length;
-      if (count > 64 * 1024 * 1024) throw new Error("Ouvrez le lien dans une fenêtre autorisant les service workers pour enregistrer ce fichier volumineux.");
-      chunks.push(bytes);
+      const {bytes,done} = await source.next();
+      count += bytes.byteLength;
+      if (size !== null && (count > size || (done && count !== size))) throw new Error("Téléchargement incomplet.");
+      if (!writable && !disk && !diskUnavailable && count > memoryLimit) {
+        try {
+          disk = createDiskWriter();
+          await disk.call("open");
+        } catch {
+          disk?.close(); disk = null; diskUnavailable = true;
+        }
+        if (disk) {
+          for (const block of chunks) await disk.call("write",block);
+          chunks = [];
+        }
+      }
+      if (bytes.byteLength) {
+        if (writable) await writable.write(bytes);
+        else if (disk) await disk.call("write",bytes.buffer);
+        else {
+          if (count > 64 * 1024 * 1024) throw new Error("Le stockage temporaire de votre navigateur est indisponible. Ouvrez le lien dans une fenêtre normale pour enregistrer ce fichier volumineux.");
+          chunks.push(bytes.buffer);
+        }
+      }
       progress(count);
       if (done) break;
     }
-    if (size !== null && count !== size) throw new Error("Téléchargement incomplet.");
-    const url = URL.createObjectURL(new Blob(chunks, {type:mime}));
-    const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } finally { await source.cancel(); }
+    if (writable) { await writable.close(); writable = null; }
+    else if (disk) {
+      const {file,name} = await disk.call("finish");
+      if (file.size !== count) throw new Error("Téléchargement incomplet.");
+      present(file,filename,name);
+    } else present(new Blob(chunks,{type:mime}),filename,null);
+    completed = true;
+  } finally {
+    if (!completed) {
+      if (writable) await writable.abort().catch(()=>{});
+      if (disk) await disk.call("discard").catch(()=>{});
+    }
+    disk?.close();
+    await source.cancel();
+  }
 }

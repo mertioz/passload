@@ -147,7 +147,7 @@ try
         var localBase = $"/s/{preview.Token}";
         Check((await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"), "aperçu sur le PC expéditeur sans rebouclage de la box");
         Check((await browser.GetStringAsync(localBase+"/files/0")) == await File.ReadAllTextAsync(file), "fichier accessible par l’aperçu local");
-        foreach (var asset in new[]{"","receive.js","wire.js","pipe.js","save.js","sw.js","style.css"})
+        foreach (var asset in new[]{"","receive.js","wire.js","pipe.js","save.js","disk.js","style.css"})
             Check((await browser.GetAsync("/recevoir/"+asset)).IsSuccessStatusCode, "lecteur intégré disponible · "+(asset==""?"page":asset));
         using var wrongHost = new HttpRequestMessage(HttpMethod.Get,localBase);
         wrongHost.Headers.Host = "autre.example";

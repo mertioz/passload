@@ -82,7 +82,7 @@ public sealed class TransferServer : IAsyncDisposable
             "/recevoir/style.css" => "style.css",
             "/recevoir/receive.js" => "receive.js",
             "/recevoir/save.js" => "save.js",
-            "/recevoir/sw.js" => "sw.js",
+            "/recevoir/disk.js" => "disk.js",
             _ => null
         };
         if (path != "/engine/host" && asset is null)

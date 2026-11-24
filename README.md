@@ -20,6 +20,8 @@ Ouvrez le lien complet dans un navigateur récent. Les boutons permettent de cho
 
 Vous pouvez aussi coller le lien dans **Recevoir** sur un deuxième PC Windows. L’application ouvre alors sa copie locale de la page de réception dans le navigateur. Le ZIP est construit au fil de l’envoi. Les fichiers homonymes conservent des entrées distinctes.
 
+Pour les fichiers volumineux, le navigateur peut utiliser un fichier temporaire sur le disque du destinataire avant de proposer la copie terminée. Le bouton **Enregistrer à nouveau** permet de relancer l’enregistrement local. Les fichiers temporaires ordinaires sont nettoyés après la copie. Une réception ultérieure supprime aussi les restes âgés de plus de huit jours.
+
 ## Comment les deux PC se connectent
 
 - **Mise en relation.** Les deux appareils échangent des messages chiffrés via le service public Piping Server. Un serveur STUN aide WebRTC à identifier les chemins réseau disponibles. Le PC expéditeur vérifie que la mise en relation fonctionne avant de copier le lien. [Piping Server](https://github.com/nwtgck/piping-server) · [WebRTC](https://www.w3.org/TR/webrtc/)
