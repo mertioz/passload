@@ -1,158 +1,91 @@
 <Window x:Class="Passload.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Passload" Width="1080" Height="750"
-        MinWidth="790" MinHeight="560" WindowStartupLocation="CenterScreen" Icon="Assets/Passload.ico"
-        FontFamily="{StaticResource BodyFont}" FontSize="15" Background="#F5F6F0" Foreground="{StaticResource Ink}"
-        UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" Closing="OnClosing">
-    <Grid>
-        <Grid.ColumnDefinitions><ColumnDefinition Width="202"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-        <Border Background="#192B23" Padding="16,29,16,18">
-            <DockPanel LastChildFill="True">
-                <StackPanel DockPanel.Dock="Top" Orientation="Horizontal" Margin="9,0,0,37">
-                    <Border Width="35" Height="35" CornerRadius="9" Background="{StaticResource Lime}">
-                        <Path Data="{StaticResource BrandMark}" Fill="#192B23" Stretch="Uniform" Width="23" Height="23"/>
-                    </Border>
-                    <TextBlock Text="Passload" FontSize="28" FontWeight="Bold" Foreground="White" Margin="10,-2,0,0"/>
-                </StackPanel>
-                <StackPanel DockPanel.Dock="Bottom">
-                    <RadioButton x:Name="NetNav" Tag="Network" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" AutomationProperties.Name="Connexion">
-                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE774;" Style="{StaticResource Glyph}"/><AccessText Text="Connexion" Margin="12,0,0,0"/></StackPanel>
-                    </RadioButton>
-                    <Border Height="1" Background="#3A4C40" Margin="9,12"/>
-                    <StackPanel Orientation="Horizontal" Margin="10,2,0,0"><Ellipse x:Name="StateDot" Width="7" Height="7" Fill="#9AA99D"/><TextBlock x:Name="StateText" Text="En veille" Foreground="#C2D1C5" FontSize="14" Margin="9,0,0,0"/></StackPanel>
-                </StackPanel>
-                <StackPanel>
-                    <RadioButton x:Name="SendNav" Tag="Send" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" AutomationProperties.Name="Envoyer">
-                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE72D;" Style="{StaticResource Glyph}"/><AccessText Text="Envoyer" Margin="12,0,0,0"/></StackPanel>
-                    </RadioButton>
-                    <RadioButton x:Name="ReceiveNav" Tag="Receive" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" AutomationProperties.Name="Recevoir">
-                        <StackPanel Orientation="Horizontal"><TextBlock Text="&#xE896;" Style="{StaticResource Glyph}"/><AccessText Text="Recevoir" Margin="12,0,0,0"/></StackPanel>
-                    </RadioButton>
-                    <RadioButton x:Name="LinksNav" Tag="Links" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" AutomationProperties.Name="Liens actifs">
-                        <DockPanel><TextBlock DockPanel.Dock="Left" Text="&#xE71B;" Style="{StaticResource Glyph}"/><AccessText x:Name="NavCount" DockPanel.Dock="Right" VerticalAlignment="Center" FontSize="13"/><AccessText Text="Liens actifs" Margin="12,0,0,0"/></DockPanel>
-                    </RadioButton>
-                </StackPanel>
-            </DockPanel>
-        </Border>
-        <Grid Grid.Column="1" Margin="32,23,32,20" MaxWidth="1040">
-            <Grid.RowDefinitions><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-            <ScrollViewer x:Name="MainScroll" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="0,0,5,0">
-                <Grid>
-                    <StackPanel x:Name="SendPage">
-                        <TextBlock Text="Envoyer des fichiers" Style="{StaticResource Title}"/>
-                        <TextBlock Text="Partagez une sélection de votre PC avec un lien temporaire." Style="{StaticResource Lead}"/>
-                        <Border Style="{StaticResource Card}" Margin="0,23,0,13" AllowDrop="True" PreviewDragOver="DragFilesOver" Drop="DropFiles" x:Name="FileCard">
-                            <StackPanel>
-                                <DockPanel Margin="0,0,0,14">
-                                    <Button DockPanel.Dock="Right" x:Name="AddMoreButton" Content="+ Ajouter" Click="BrowseFiles" Visibility="Collapsed" MinHeight="30" Padding="10,3"/>
-                                    <StackPanel Orientation="Horizontal"><TextBlock Text="Fichiers à partager" Style="{StaticResource SectionTitle}"/><TextBlock x:Name="DraftCount" Style="{StaticResource Hint}" Margin="12,2,0,0"/></StackPanel>
-                                </DockPanel>
-                                <Grid x:Name="DropZone" MinHeight="172" Background="#F3F7EB" MouseLeftButtonUp="DropZoneClick" Cursor="Hand">
-                                    <Rectangle IsHitTestVisible="False" RadiusX="8" RadiusY="8">
-                                        <Rectangle.Fill><DrawingBrush TileMode="Tile" Viewport="0,0,13,13" ViewportUnits="Absolute" Viewbox="0,0,13,13" ViewboxUnits="Absolute">
-                                            <DrawingBrush.Drawing><GeometryDrawing Brush="#D0DCC4"><GeometryDrawing.Geometry><EllipseGeometry Center="2,2" RadiusX=".85" RadiusY=".85"/></GeometryDrawing.Geometry></GeometryDrawing></DrawingBrush.Drawing>
-                                        </DrawingBrush></Rectangle.Fill>
-                                    </Rectangle>
-                                    <Rectangle Stroke="#9AAE8D" RadiusX="8" RadiusY="8" StrokeDashArray="5,4" IsHitTestVisible="False"/>
-                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="10">
-                                        <Viewbox Width="93" Height="88" Margin="0,0,22,0" IsHitTestVisible="False">
-                                            <Canvas Width="100" Height="94">
-                                                <Path Data="M12,29 L53,19 Q57,18 58,22 L69,69 Q70,73 66,74 L25,84 Q21,85 20,81 Z" Fill="#C9DAAD" Stroke="#4D6547" StrokeThickness="2" StrokeLineJoin="Round"/>
-                                                <Path Data="M28,13 L68,10 Q72,10 72,14 L76,66 Q76,70 72,70 L33,74 Q29,74 29,70 Z" Fill="#F9FBF1" Stroke="#405840" StrokeThickness="2" StrokeLineJoin="Round"/>
-                                                <Path Data="M41,20 L69,23 L81,38 L76,77 Q76,81 72,80 L37,76 Q33,76 34,72 L39,23 Q39,20 41,20 Z" Fill="#DEF49A" Stroke="#304A35" StrokeThickness="2.3" StrokeLineJoin="Round"/>
-                                                <Path Data="M69,24 L68,36 L80,38 M45,47 L66,50 M44,54 L61,56" Stroke="#456043" StrokeThickness="2.2" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
-                                                <Ellipse Canvas.Left="66" Canvas.Top="58" Width="29" Height="29" Fill="#243B2A"/>
-                                                <Path Data="M75,78 L85,68 M78,68 L85,68 L85,75" Stroke="#E2FAAA" StrokeThickness="2.4" StrokeStartLineCap="Round" StrokeEndLineCap="Round" StrokeLineJoin="Round"/>
-                                            </Canvas>
-                                        </Viewbox>
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="Glissez vos fichiers ici" FontSize="23" FontWeight="SemiBold"/>
-                                            <TextBlock Text="Documents, photos, vidéos…" Style="{StaticResource Hint}" Margin="0,3,0,12"/>
-                                            <Button Content="Parcourir les fichiers" Click="BrowseFiles" HorizontalAlignment="Left" MinHeight="31" Padding="11,4"/>
-                                        </StackPanel>
-                                    </StackPanel>
-                                </Grid>
-                                <ScrollViewer x:Name="DraftScroll" MaxHeight="182" VerticalScrollBarVisibility="Auto" Visibility="Collapsed"><StackPanel x:Name="DraftRows"/></ScrollViewer>
-                            </StackPanel>
-                        </Border>
-                        <Border Style="{StaticResource Card}" x:Name="OptionsCard">
-                            <StackPanel>
-                                <TextBlock Text="Réglages du lien" Style="{StaticResource SectionTitle}" Margin="0,0,0,14"/>
-                                <Grid>
-                                    <Grid.ColumnDefinitions><ColumnDefinition Width="123"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="10"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-                                    <TextBlock Text="Durée de validité" FontWeight="SemiBold"/>
-                                    <UniformGrid Grid.Column="1" Rows="1">
-                                        <RadioButton GroupName="Duration" x:Name="D15" Style="{StaticResource Choice}" Content="15 min"/>
-                                        <RadioButton GroupName="Duration" x:Name="D60" Style="{StaticResource Choice}" Content="1 heure" IsChecked="True"/>
-                                        <RadioButton GroupName="Duration" x:Name="D24" Style="{StaticResource Choice}" Content="24 heures"/>
-                                        <RadioButton GroupName="Duration" x:Name="D7" Style="{StaticResource Choice}" Content="7 jours"/>
-                                    </UniformGrid>
-                                    <TextBlock Grid.Row="2" Text="Accès" FontWeight="SemiBold"/>
-                                    <UniformGrid Grid.Row="2" Grid.Column="1" Rows="1">
-                                        <RadioButton GroupName="Scope" x:Name="InternetScope" Style="{StaticResource Choice}" Content="Internet" IsChecked="True"/>
-                                        <RadioButton GroupName="Scope" x:Name="LocalScope" Style="{StaticResource Choice}" Content="Réseau local"/>
-                                    </UniformGrid>
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-                        <DockPanel Margin="0,18,0,4">
-                            <Button DockPanel.Dock="Right" x:Name="CreateButton" Content="Créer le lien  ↗" Style="{StaticResource Primary}" Click="CreateShare" IsEnabled="False" MinWidth="145"/>
-                            <TextBlock Style="{StaticResource Hint}" Text="Gardez Passload ouvert et le PC éveillé pendant le partage." Margin="0,0,14,0"/>
-                        </DockPanel>
-                    </StackPanel>
-                    <StackPanel x:Name="LinksPage" Visibility="Collapsed">
-                        <TextBlock Text="Liens actifs" Style="{StaticResource Title}"/><TextBlock Text="Copiez un lien ou arrêtez un partage à tout moment." Style="{StaticResource Lead}"/>
-                        <StackPanel x:Name="LinkCards" Margin="0,23,0,0"/>
-                    </StackPanel>
-                    <StackPanel x:Name="ReceivePage" Visibility="Collapsed">
-                        <TextBlock Text="Recevoir des fichiers" Style="{StaticResource Title}"/><TextBlock Text="Collez le lien de l’expéditeur pour récupérer ses fichiers." Style="{StaticResource Lead}"/>
-                        <Border Style="{StaticResource Card}" Margin="0,23,0,13">
-                            <StackPanel><TextBlock Text="Lien Passload" Style="{StaticResource SectionTitle}"/>
-                                <TextBox x:Name="ReceiveUrl" Margin="0,12,0,12" AutomationProperties.Name="Lien Passload reçu" ToolTip="Lien complet transmis par l’expéditeur" TextChanged="ReceiveUrlChanged"/>
-                                <DockPanel><Button DockPanel.Dock="Right" x:Name="InspectButton" Style="{StaticResource Primary}" Click="InspectLink" Content="Afficher les fichiers"/>
-                                    <TextBlock Text="L’empreinte du lien permet de vérifier le PC expéditeur." Style="{StaticResource Hint}" Margin="0,0,12,0"/>
-                                </DockPanel>
-                            </StackPanel>
-                        </Border>
-                        <Border x:Name="IncomingCard" Style="{StaticResource Card}" Visibility="Collapsed"><StackPanel>
-                            <DockPanel><Button x:Name="ZipButton" Content="Tout télécharger en ZIP" DockPanel.Dock="Right" Click="DownloadZip"/>
-                                <TextBlock x:Name="IncomingSummary" Style="{StaticResource SectionTitle}"/></DockPanel>
-                            <StackPanel x:Name="IncomingRows" Margin="0,10,0,0"/>
-                        </StackPanel></Border>
-                        <DockPanel x:Name="DownloadPanel" Visibility="Collapsed" Margin="0,16,0,0">
-                            <Button DockPanel.Dock="Right" Content="Annuler" Click="CancelReceive"/>
-                            <StackPanel VerticalAlignment="Center" Margin="0,0,16,0"><TextBlock x:Name="DownloadText" Style="{StaticResource Hint}"/>
-                                <ProgressBar x:Name="DownloadProgress" Height="5" Margin="0,6,0,0" Foreground="#6C8D52" Background="#DFE6D8" BorderThickness="0"/>
-                            </StackPanel>
-                        </DockPanel>
-                    </StackPanel>
-                    <StackPanel x:Name="NetworkPage" Visibility="Collapsed">
-                        <TextBlock Text="Connexion" Style="{StaticResource Title}"/><TextBlock Text="Configurez l’accès à cet ordinateur depuis un autre réseau." Style="{StaticResource Lead}"/>
-                        <Border Style="{StaticResource Card}" Margin="0,23,0,13"><StackPanel>
-                            <DockPanel><Button Content="Actualiser" DockPanel.Dock="Right" Click="RefreshNetwork"/><TextBlock Text="Ce PC" Style="{StaticResource SectionTitle}"/></DockPanel>
-                            <TextBlock x:Name="LocalAddressText" Margin="0,10,0,0" TextWrapping="Wrap"/><TextBlock x:Name="IPv6Text" Style="{StaticResource Hint}" Margin="0,5,0,0"/>
-                            <Button x:Name="RouterButton" Content="Ouvrir l’interface de ma box  ↗" Click="OpenRouter" HorizontalAlignment="Left" Margin="0,10,0,0"/>
-                        </StackPanel></Border>
-                        <Border Style="{StaticResource Card}"><StackPanel>
-                            <TextBlock Text="Accès depuis Internet" Style="{StaticResource SectionTitle}"/>
-                            <TextBlock Style="{StaticResource Hint}" Margin="0,6,0,12" Text="Passload demande une ouverture temporaire à votre box par UPnP ou NAT-PMP. Si elle la refuse, redirigez un port TCP vers l’adresse locale de ce PC et renseignez votre adresse publique ci-dessous."/>
-                            <Grid><Grid.ColumnDefinitions><ColumnDefinition Width="130"/><ColumnDefinition Width="14"/><ColumnDefinition/></Grid.ColumnDefinitions>
-                                <StackPanel><TextBlock Text="Port TCP du PC" FontWeight="SemiBold"/><TextBox x:Name="PortInput" Margin="0,5,0,0" AutomationProperties.Name="Port TCP du PC"/></StackPanel>
-                                <StackPanel Grid.Column="2"><TextBlock Text="Adresse publique manuelle (facultatif)" FontWeight="SemiBold"/><TextBox x:Name="ManualInput" Margin="0,5,0,0" AutomationProperties.Name="Adresse publique manuelle" ToolTip="Adresse IP publique ou domaine, avec un port externe si nécessaire."/></StackPanel>
-                            </Grid>
-                            <TextBlock Style="{StaticResource Hint}" Margin="0,9,0,12" Text="Laissez l’adresse vide pour la détection automatique. Pour préciser le port externe, utilisez par exemple partage.exemple.fr:5443."/>
-                            <WrapPanel><Button Style="{StaticResource Primary}" Content="Enregistrer" Click="SaveNetwork" Margin="0,0,8,5"/>
-                                <Button Content="Autoriser dans le pare-feu Windows" Click="RequestFirewall" Margin="0,0,0,5"/></WrapPanel>
-                        </StackPanel></Border>
-                        <TextBlock Style="{StaticResource Hint}" Margin="3,14,0,3" Text="Avec une IPv4 partagée par l’opérateur (CGNAT), utilisez une IPv6 publique accessible des deux côtés ou demandez une IPv4 publique. En IPv6, autorisez aussi le port TCP dans le pare-feu de la box. Testez le lien depuis un autre réseau, par exemple en 4G."/>
-                        <Button Content="Licences du logiciel" Click="ShowLicenses" HorizontalAlignment="Left" Margin="0,12,0,0"/>
-                    </StackPanel>
-                </Grid>
-            </ScrollViewer>
-            <Border x:Name="NoticeBox" Grid.Row="1" CornerRadius="8" Padding="12,8" Margin="0,10,5,0" Visibility="Collapsed" Background="#E1EFD4">
-                <DockPanel><Button DockPanel.Dock="Right" Content="×" ToolTip="Masquer le message" Click="DismissNotice" MinHeight="24" Padding="5,0" Margin="8,0,0,0" Background="Transparent" BorderThickness="0"/>
-                    <TextBlock x:Name="NoticeText" TextWrapping="Wrap" FontSize="14" AutomationProperties.LiveSetting="Polite"/></DockPanel>
-            </Border>
-        </Grid>
-    </Grid>
+ xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="Passload" Width="740" Height="620" MinWidth="540" MinHeight="455"
+ WindowStartupLocation="CenterScreen" Icon="Assets/Passload.ico" FontFamily="{StaticResource BodyFont}" FontSize="15"
+ Foreground="{StaticResource Ink}" Background="White" UseLayoutRounding="True" TextOptions.TextFormattingMode="Display" Closing="OnClosing">
+ <Grid x:Name="Surface">
+  <Grid.RowDefinitions><RowDefinition Height="61"/><RowDefinition/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+  <Border BorderBrush="{StaticResource Line}" BorderThickness="0,0,0,1" Padding="26,0">
+   <DockPanel>
+    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+     <Path Data="{StaticResource BrandMark}" Fill="{StaticResource Ink}" Stretch="Uniform" Width="21" Height="21"/>
+     <TextBlock Text="Passload" FontWeight="Bold" FontSize="23" Margin="7,-2,0,0"/>
+    </StackPanel>
+    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal" VerticalAlignment="Center">
+     <RadioButton x:Name="SendNav" Tag="Send" Content="Envoyer" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate"/>
+     <RadioButton x:Name="ReceiveNav" Tag="Receive" Content="Recevoir" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate"/>
+     <RadioButton x:Name="LinksNav" Tag="Links" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" AutomationProperties.Name="Liens actifs"><StackPanel Orientation="Horizontal"><AccessText Text="Liens"/><AccessText x:Name="NavCount"/></StackPanel></RadioButton>
+     <RadioButton x:Name="NetNav" Tag="Network" GroupName="Navigation" Style="{StaticResource Nav}" Checked="Navigate" ToolTip="Connexion" AutomationProperties.Name="Connexion">
+      <Path Width="16" Height="16" Stretch="Uniform" Stroke="{StaticResource Ink}" StrokeThickness="1.6" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 1,4 H 10 M 14,4 H 19 M 1,12 H 4 M 8,12 H 19 M 10,1 V 7 M 6,9 V 15"/>
+     </RadioButton>
+    </StackPanel>
+   </DockPanel>
+  </Border>
+  <ScrollViewer x:Name="MainScroll" Grid.Row="1" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto" Padding="24,0">
+   <Grid MaxWidth="500" Margin="0,30,0,24">
+    <StackPanel x:Name="SendPage">
+     <TextBlock Text="Partager des fichiers" Style="{StaticResource Title}"/>
+     <Border x:Name="FileCard" AllowDrop="True" PreviewDragOver="DragFilesOver" Drop="DropFiles" BorderBrush="{StaticResource Line}" BorderThickness="1" CornerRadius="12" Background="#FCFCFB" Margin="0,22,0,14">
+      <StackPanel>
+       <Grid x:Name="DropZone" MinHeight="170" Background="Transparent" MouseLeftButtonUp="DropZoneClick" Cursor="Hand">
+        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+         <Path Stroke="{StaticResource Ink}" StrokeThickness="1.6" StrokeLineJoin="Round" StrokeStartLineCap="Round" StrokeEndLineCap="Round" Data="M 12,16 V 2 M 6,8 L 12,2 L 18,8 M 2,16 V 20 Q 2,23 5,23 H 19 Q 22,23 22,20 V 16" HorizontalAlignment="Center" Width="25" Height="25" Stretch="Uniform"/>
+         <TextBlock Text="Déposez vos fichiers ici" FontSize="20" FontWeight="SemiBold" Margin="0,11,0,6" HorizontalAlignment="Center"/>
+         <Button Content="Parcourir les fichiers" Style="{StaticResource TextAction}" Click="BrowseFiles" HorizontalAlignment="Center"/>
+        </StackPanel>
+       </Grid>
+       <DockPanel x:Name="SelectionHeader" Visibility="Collapsed" Margin="14,10,14,4">
+        <Button x:Name="AddMoreButton" DockPanel.Dock="Right" Content="+ Ajouter" Style="{StaticResource TextAction}" Click="BrowseFiles"/>
+        <TextBlock x:Name="DraftCount" Style="{StaticResource Hint}"/>
+       </DockPanel>
+       <ScrollViewer x:Name="DraftScroll" MaxHeight="195" Margin="14,0,14,10" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"><StackPanel x:Name="DraftRows"/></ScrollViewer>
+      </StackPanel>
+     </Border>
+     <DockPanel x:Name="OptionsCard" Margin="0,0,0,14">
+      <ComboBox DockPanel.Dock="Right" x:Name="Duration" SelectedIndex="1" AutomationProperties.Name="Durée de validité" MinWidth="108" VerticalAlignment="Center">
+       <ComboBoxItem Content="15 minutes" Tag="15"/><ComboBoxItem Content="1 heure" Tag="60"/><ComboBoxItem Content="24 heures" Tag="1440"/><ComboBoxItem Content="7 jours" Tag="10080"/>
+      </ComboBox>
+      <TextBlock Text="Le lien expire après" Style="{StaticResource Hint}"/>
+     </DockPanel>
+     <Button x:Name="CreateButton" Content="Créer le lien" Click="CreateShare" Style="{StaticResource Primary}" IsEnabled="False"/>
+     <TextBlock Text="Gardez Passload ouvert et le PC éveillé." Style="{StaticResource Hint}" HorizontalAlignment="Center" Margin="0,10,0,0"/>
+    </StackPanel>
+    <StackPanel x:Name="LinksPage" Visibility="Collapsed">
+     <TextBlock Text="Liens actifs" Style="{StaticResource Title}"/><StackPanel x:Name="LinkCards" Margin="0,20,0,0"/>
+    </StackPanel>
+    <StackPanel x:Name="ReceivePage" Visibility="Collapsed">
+     <TextBlock Text="Recevoir des fichiers" Style="{StaticResource Title}"/>
+     <TextBlock Text="Lien de l’expéditeur" Style="{StaticResource Hint}" Margin="0,24,0,6"/>
+     <TextBox x:Name="ReceiveUrl" AutomationProperties.Name="Lien Passload reçu" TextChanged="ReceiveUrlChanged"/>
+     <Button x:Name="InspectButton" Content="Ouvrir le lien" Style="{StaticResource Primary}" Margin="0,12,0,0" Click="InspectLink"/>
+     <Border x:Name="IncomingCard" Style="{StaticResource Card}" Margin="0,16,0,0" Visibility="Collapsed"><StackPanel>
+      <DockPanel><Button x:Name="ZipButton" Content="Tout télécharger en ZIP" DockPanel.Dock="Right" Click="DownloadZip"/><TextBlock x:Name="IncomingSummary" Style="{StaticResource SectionTitle}"/></DockPanel>
+      <StackPanel x:Name="IncomingRows" Margin="0,10,0,0"/>
+     </StackPanel></Border>
+     <DockPanel x:Name="DownloadPanel" Visibility="Collapsed" Margin="0,14,0,0"><Button DockPanel.Dock="Right" Content="Annuler" Click="CancelReceive"/>
+      <StackPanel VerticalAlignment="Center" Margin="0,0,12,0"><TextBlock x:Name="DownloadText" Style="{StaticResource Hint}"/><ProgressBar x:Name="DownloadProgress" Height="3" Foreground="{StaticResource Ink}" Margin="0,6,0,0"/></StackPanel>
+     </DockPanel>
+    </StackPanel>
+    <StackPanel x:Name="NetworkPage" Visibility="Collapsed">
+     <TextBlock Text="Connexion" Style="{StaticResource Title}"/>
+     <TextBlock Text="Accès des prochains liens" FontWeight="SemiBold" Margin="0,22,0,6"/>
+     <WrapPanel><RadioButton x:Name="InternetScope" Content="Internet" GroupName="Scope" IsChecked="True" Style="{StaticResource Choice}"/><RadioButton x:Name="LocalScope" Content="Réseau local" GroupName="Scope" Style="{StaticResource Choice}"/><RadioButton x:Name="DirectScope" Content="Par adresse IP" GroupName="Scope" Style="{StaticResource Choice}"/></WrapPanel>
+     <Expander Header="Réglages avancés" Margin="0,18,0,0"><StackPanel Margin="3,12,3,0">
+      <CheckBox x:Name="RelayOption" IsChecked="True" Content="Autoriser un relais chiffré si la connexion directe échoue" Margin="0,2,0,12" ToolTip="Le relais transmet les données chiffrées pendant le téléchargement, sans stocker les fichiers."/>
+      <TextBlock x:Name="LocalAddressText" Style="{StaticResource Hint}"/><TextBlock x:Name="IPv6Text" Style="{StaticResource Hint}" Margin="0,3,0,8"/>
+      <WrapPanel><Button Content="Actualiser" Click="RefreshNetwork" Margin="0,0,6,4"/><Button x:Name="RouterButton" Content="Ouvrir ma box" Click="OpenRouter" Margin="0,0,6,4"/></WrapPanel>
+      <Grid Margin="0,10,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="98"/><ColumnDefinition Width="10"/><ColumnDefinition/></Grid.ColumnDefinitions>
+       <StackPanel><TextBlock Text="Port TCP" Style="{StaticResource Hint}"/><TextBox x:Name="PortInput" Margin="0,4,0,0" AutomationProperties.Name="Port TCP du PC"/></StackPanel>
+       <StackPanel Grid.Column="2"><TextBlock Text="Adresse publique manuelle" Style="{StaticResource Hint}"/><TextBox x:Name="ManualInput" Margin="0,4,0,0" AutomationProperties.Name="Adresse publique manuelle"/></StackPanel>
+      </Grid>
+      <WrapPanel><Button Content="Enregistrer" Click="SaveNetwork" Margin="0,0,6,4"/><Button Content="Autoriser dans le pare-feu" Click="RequestFirewall" Margin="0,0,0,4"/></WrapPanel>
+     </StackPanel></Expander>
+     <Button Content="Licences du logiciel" Style="{StaticResource TextAction}" Click="ShowLicenses" HorizontalAlignment="Left" Margin="0,16,0,0"/>
+    </StackPanel>
+   </Grid>
+  </ScrollViewer>
+  <Border x:Name="NoticeBox" Grid.Row="2" Background="#F3F3F0" BorderBrush="{StaticResource Line}" BorderThickness="0,1,0,0" Padding="20,9" Visibility="Collapsed"><DockPanel>
+   <Button DockPanel.Dock="Right" Content="×" Style="{StaticResource TextAction}" ToolTip="Masquer le message" Click="DismissNotice"/>
+   <TextBlock x:Name="NoticeText" TextWrapping="Wrap" VerticalAlignment="Center" FontSize="14" AutomationProperties.LiveSetting="Polite"/>
+  </DockPanel></Border>
+ </Grid>
 </Window>

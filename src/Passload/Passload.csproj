@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <ProjectReference Include="../Passload.Core/Passload.Core.csproj" />
+    <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Resource Include="Assets/Fonts/*.ttf" />
     <Resource Include="Assets/Passload.ico" />
     <EmbeddedResource Include="../../LICENSE" LogicalName="Passload.LICENSE" />

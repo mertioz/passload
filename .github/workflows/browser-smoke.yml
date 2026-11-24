@@ -1,0 +1,27 @@
+name: Réception depuis un autre réseau
+on: workflow_dispatch
+permissions:
+  contents: read
+jobs:
+  receive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    defaults:
+      run:
+        working-directory: tests/browser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npx --no-install playwright-core install --with-deps ${{ matrix.browser }}
+      - name: Télécharger et comparer les fichiers de démonstration
+        env:
+          PASSLOAD_SMOKE_LINK: ${{ secrets.PASSLOAD_SMOKE_LINK }}
+          PASSLOAD_BROWSER: ${{ matrix.browser }}
+        run: npm run check

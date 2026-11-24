@@ -7,4 +7,5 @@
 *.pfx
 *.p12
 artifacts/
+node_modules/
 Passload.exe

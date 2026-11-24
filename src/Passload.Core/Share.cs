@@ -63,7 +63,7 @@ public sealed class Share
     public long TotalSize { get; }
 
     internal Share(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink)
     {
         if (files.Count == 0 || duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(7))
             throw new ArgumentOutOfRangeException(nameof(duration));
@@ -75,7 +75,7 @@ public sealed class Share
         Scope = scope;
         RouteLabel = routeLabel;
         UsesRouter = usesRouter;
-        Link = new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
+        Link = publicLink ?? new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
     }
 
     internal void End()
@@ -91,9 +91,9 @@ public sealed class ShareCatalog
     public Share[] Active => _shares.Values.Where(s => s.Active).OrderBy(s => s.ExpiresAt).ToArray();
 
     public Share Add(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null)
     {
-        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter);
+        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();
         throw new InvalidOperationException("Impossible de générer un lien unique.");
@@ -107,13 +107,13 @@ public sealed class ShareCatalog
         if (_shares.TryRemove(token, out var share)) share.End();
     }
 
-    internal void Collect()
+    public void Collect()
     {
         foreach (var pair in _shares)
             if (!pair.Value.Active) Revoke(pair.Key);
     }
 
-    internal void EndAll()
+    public void EndAll()
     {
         foreach (var token in _shares.Keys) Revoke(token);
     }

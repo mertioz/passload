@@ -132,6 +132,23 @@ try
     Check(!await pmpLease.RenewAsync(), "changement d’adresse WAN détecté");
     await pmpLease.ReleaseAsync();
     Check(pmp.Rules.Count == 0, "suppression du bail NAT-PMP");
+    var privateCatalog = new ShareCatalog();
+    await using (var engine = await TransferServer.StartAsync(privateCatalog,0,[],loopbackOnly:true,browserEngine:true))
+    {
+        var localOrigin = new Uri($"http://127.0.0.1:{engine.Port}");
+        var preview = privateCatalog.Add(SharedFile.Select([file]),TimeSpan.FromMinutes(1),ShareScope.Internet,localOrigin,"","Internet",publicLink:new Uri("https://passload.example/#test"));
+        using var browser = new HttpClient {BaseAddress=localOrigin};
+        var localBase = $"/s/{preview.Token}";
+        Check((await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"), "aperçu sur le PC expéditeur sans rebouclage de la box");
+        Check((await browser.GetStringAsync(localBase+"/files/0")) == await File.ReadAllTextAsync(file), "fichier accessible par l’aperçu local");
+        foreach (var asset in new[]{"","receive.js","wire.js","pipe.js","save.js","sw.js","style.css"})
+            Check((await browser.GetAsync("/recevoir/"+asset)).IsSuccessStatusCode, "lecteur intégré disponible · "+(asset==""?"page":asset));
+        using var wrongHost = new HttpRequestMessage(HttpMethod.Get,localBase);
+        wrongHost.Headers.Host = "autre.example";
+        Check((await browser.SendAsync(wrongHost)).StatusCode==HttpStatusCode.Forbidden, "moteur local limité à sa propre adresse");
+        privateCatalog.Revoke(preview.Token);
+        Check((await browser.GetAsync(localBase)).StatusCode==HttpStatusCode.NotFound, "aperçu local révoqué avec le partage");
+    }
     if (args.Contains("--network"))
     {
         await using var service = new ShareService();

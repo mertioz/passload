@@ -23,11 +23,25 @@ public partial class MainWindow
     private async void InspectLink(object sender, RoutedEventArgs e)
     {
         if (_receiveTask is not null) return;
+        if (InternetSharing.IsBrowserLink(ReceiveUrl.Text, out var publicLink))
+        {
+            try
+            {
+                var page = await _internet.ReaderUriAsync(publicLink!, _lifetime.Token);
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
+                Notice("Lien ouvert dans le navigateur.");
+            }
+            catch (Exception ex) { Notice(Friendly(ex), true); }
+            return;
+        }
         await ReceiveWork(async token =>
         {
             IncomingCard.Visibility = Visibility.Collapsed;
             _receiver?.Dispose();
-            _receiver = new ReceiveClient(ReceiveUrl.Text);
+            // A router may not loop connections to its public IP back to the originating PC.
+            var own = _sharing.Active.FirstOrDefault(s => s.Link.AbsoluteUri == ReceiveUrl.Text.Trim());
+            var link = own is null ? ReceiveUrl.Text : new UriBuilder(own.Link) { Host = "127.0.0.1", Port = _settings.Port }.Uri.AbsoluteUri;
+            _receiver = new ReceiveClient(link);
             var data = await _receiver.InspectAsync(token);
             IncomingSummary.Text = Display.Count(data.Files.Length);
             ZipButton.Visibility = data.Files.Length > 1 ? Visibility.Visible : Visibility.Collapsed;

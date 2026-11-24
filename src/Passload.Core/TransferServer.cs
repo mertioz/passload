@@ -20,12 +20,12 @@ namespace Passload.Core;
 public sealed class TransferServer : IAsyncDisposable
 {
     private readonly WebApplication _app;
-    private readonly X509Certificate2 _certificate;
+    private readonly X509Certificate2? _certificate;
     private static readonly string Template = LoadTemplate();
-    public string Fingerprint => _certificate.GetCertHashString(HashAlgorithmName.SHA256);
+    public string Fingerprint => _certificate?.GetCertHashString(HashAlgorithmName.SHA256) ?? "";
     public int Port { get; }
 
-    private TransferServer(WebApplication app, X509Certificate2 certificate)
+    private TransferServer(WebApplication app, X509Certificate2? certificate)
     {
         _app = app;
         _certificate = certificate;
@@ -34,9 +34,10 @@ public sealed class TransferServer : IAsyncDisposable
     }
 
     public static async Task<TransferServer> StartAsync(ShareCatalog catalog, int port, IEnumerable<IPAddress> addresses,
-        bool loopbackOnly = false, CancellationToken cancellation = default)
+        bool loopbackOnly = false, CancellationToken cancellation = default, bool browserEngine = false)
     {
-        var certificate = LocalIdentity.Create(addresses);
+        if (browserEngine && !loopbackOnly) throw new ArgumentException("Le moteur du navigateur doit rester sur la boucle locale.");
+        var certificate = browserEngine ? null : LocalIdentity.Create(addresses);
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
         builder.WebHost.ConfigureKestrel(server =>
@@ -45,11 +46,12 @@ public sealed class TransferServer : IAsyncDisposable
             server.Limits.MaxConcurrentConnections = 96;
             server.Limits.MaxRequestBodySize = 0;
             server.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(12);
-            if (loopbackOnly) server.Listen(IPAddress.Loopback, port, endpoint => endpoint.UseHttps(certificate));
-            else server.ListenAnyIP(port, endpoint => endpoint.UseHttps(certificate));
+            if (browserEngine) server.Listen(IPAddress.Loopback, port);
+            else if (loopbackOnly) server.Listen(IPAddress.Loopback, port, endpoint => endpoint.UseHttps(certificate!));
+            else server.ListenAnyIP(port, endpoint => endpoint.UseHttps(certificate!));
         });
         var app = builder.Build();
-        app.Run(ctx => ServeAsync(ctx, catalog));
+        app.Run(ctx => browserEngine ? ServeEngine(ctx, catalog) : ServeAsync(ctx, catalog));
         try
         {
             await app.StartAsync(cancellation).ConfigureAwait(false);
@@ -58,9 +60,48 @@ public sealed class TransferServer : IAsyncDisposable
         catch
         {
             await app.DisposeAsync().ConfigureAwait(false);
-            certificate.Dispose();
+            certificate?.Dispose();
             throw;
         }
+    }
+
+    private static async Task ServeEngine(HttpContext ctx, ShareCatalog catalog)
+    {
+        if (ctx.Request.Host.Host != "127.0.0.1" || ctx.Request.Host.Port != ctx.Connection.LocalPort)
+        {
+            ctx.Response.StatusCode = 403;
+            return;
+        }
+        var path = ctx.Request.Path.Value;
+        string? asset = path switch
+        {
+            "/engine/host.js" => "host.js",
+            "/engine/wire.js" or "/recevoir/wire.js" => "wire.js",
+            "/engine/pipe.js" or "/recevoir/pipe.js" => "pipe.js",
+            "/recevoir/" => "index.html",
+            "/recevoir/style.css" => "style.css",
+            "/recevoir/receive.js" => "receive.js",
+            "/recevoir/save.js" => "save.js",
+            "/recevoir/sw.js" => "sw.js",
+            _ => null
+        };
+        if (path != "/engine/host" && asset is null)
+        {
+            await ServeAsync(ctx, catalog);
+            return;
+        }
+        ctx.Response.Headers.CacheControl = "no-store";
+        ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
+        ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://ppng.io; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+        if (path == "/engine/host")
+        {
+            ctx.Response.ContentType = "text/html; charset=utf-8";
+            await ctx.Response.WriteAsync("<!doctype html><meta charset=utf-8><title>Passload</title><script type=module src='/engine/host.js'></script>");
+            return;
+        }
+        ctx.Response.ContentType = asset switch { "style.css" => "text/css", "index.html" => "text/html; charset=utf-8", _ => "text/javascript; charset=utf-8" };
+        using var resource = typeof(TransferServer).Assembly.GetManifestResourceStream("Passload." + asset)!;
+        await resource.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
     }
 
     private static async Task ServeAsync(HttpContext ctx, ShareCatalog catalog)
@@ -169,14 +210,14 @@ public sealed class TransferServer : IAsyncDisposable
         var items = new StringBuilder();
         foreach (var file in share.Files)
         {
-            var ext = Path.GetExtension(file.Name).TrimStart('.').ToUpperInvariant();
-            if (ext.Length > 6) ext = ext[..6];
-            items.Append($"<li><span class='ext'>{WebUtility.HtmlEncode(ext.Length == 0 ? "FIC" : ext)}</span><div><b>{WebUtility.HtmlEncode(file.Name)}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {WebUtility.HtmlEncode(file.Name)}'>Télécharger <span aria-hidden='true'>↓</span></a></li>");
+            var name = WebUtility.HtmlEncode(file.Name);
+            items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {name}'>Télécharger</a></li>");
         }
         var single = share.Files.Count == 1;
-        var title = single ? "Un fichier vous attend." : "Des fichiers vous attendent.";
+        var title = single ? "Un fichier partagé" : $"{share.Files.Count} fichiers partagés";
         var expiry = share.ExpiresAt.UtcDateTime.ToString("dd MMM yyyy 'à' HH:mm 'UTC'", CultureInfo.GetCultureInfo("fr-FR"));
-        var body = $"<p class='meta'>{Display.Count(share.Files.Count)} <i>·</i> {Display.Size(share.TotalSize)}</p><h1>{title}</h1><p class='intro'>Téléchargez directement depuis l’ordinateur de l’expéditeur.</p><a class='main' href='{basePath}/{(single ? "files/0" : "all.zip")}'>{(single ? "Télécharger le fichier" : "Tout télécharger en ZIP")} <span>↓</span></a><ul>{items}</ul><footer>Disponible jusqu’au {expiry}</footer>";
+        var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'>Tout télécharger en ZIP</a>";
+        var body = $"<h1>{title}</h1><p>{Display.Size(share.TotalSize)}</p><ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p>";
         return Template.Replace("<!--content-->", body);
     }
 
@@ -187,7 +228,9 @@ public sealed class TransferServer : IAsyncDisposable
     {
         using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream("Passload.Core.Recipient.html")!;
         using var reader = new StreamReader(stream);
-        return reader.ReadToEnd();
+        using var css = Assembly.GetExecutingAssembly().GetManifestResourceStream("Passload.style.css")!;
+        using var theme = new StreamReader(css);
+        return reader.ReadToEnd().Replace("<!--theme-->", theme.ReadToEnd());
     }
 
     public async ValueTask DisposeAsync()
@@ -200,7 +243,7 @@ public sealed class TransferServer : IAsyncDisposable
         finally
         {
             await _app.DisposeAsync().ConfigureAwait(false);
-            _certificate.Dispose();
+            _certificate?.Dispose();
         }
     }
 }
