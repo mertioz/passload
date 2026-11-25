@@ -2,7 +2,30 @@
 
 Partagez un ou plusieurs fichiers depuis Windows, Linux ou macOS avec un lien temporaire. Le destinataire ouvre le lien dans son navigateur et télécharge un fichier ou toute la sélection en ZIP. L’appareil expéditeur garde les originaux.
 
-**[Installateurs et archives de Passload](https://github.com/mertioz/passload/releases)** · [Exécutable portable Windows x64](https://github.com/mertioz/passload/releases/latest/download/Passload.exe)
+## Téléchargements
+
+### Windows
+
+**[Installer Passload pour Windows x64](https://github.com/mertioz/passload/releases/latest/download/Passload-Setup.exe)**
+
+Cet installateur ajoute Passload au menu Démarrer et à **Applications installées**. L’[exécutable portable](https://github.com/mertioz/passload/releases/latest/download/Passload.exe) se lance directement depuis son dossier.
+
+### Linux
+
+| Format | x64 | ARM64 |
+| --- | --- | --- |
+| Debian et Ubuntu | [.deb](https://github.com/mertioz/passload/releases/latest/download/passload-linux-x64.deb) | [.deb](https://github.com/mertioz/passload/releases/latest/download/passload-linux-arm64.deb) |
+| Fedora et distributions RPM | [.rpm](https://github.com/mertioz/passload/releases/latest/download/passload-linux-x64.rpm) | [.rpm](https://github.com/mertioz/passload/releases/latest/download/passload-linux-arm64.rpm) |
+| Archive portable | [.tar.gz](https://github.com/mertioz/passload/releases/latest/download/passload-linux-x64.tar.gz) | [.tar.gz](https://github.com/mertioz/passload/releases/latest/download/passload-linux-arm64.tar.gz) |
+
+### macOS
+
+| Format | Intel x64 | Apple Silicon ARM64 |
+| --- | --- | --- |
+| Installateur | [.pkg](https://github.com/mertioz/passload/releases/latest/download/passload-osx-x64.pkg) | [.pkg](https://github.com/mertioz/passload/releases/latest/download/passload-osx-arm64.pkg) |
+| Archive portable | [.tar.gz](https://github.com/mertioz/passload/releases/latest/download/passload-osx-x64.tar.gz) | [.tar.gz](https://github.com/mertioz/passload/releases/latest/download/passload-osx-arm64.tar.gz) |
+
+[Toutes les versions et leurs fichiers](https://github.com/mertioz/passload/releases)
 
 ![Fenêtre principale de Passload](docs/passload.png)
 
