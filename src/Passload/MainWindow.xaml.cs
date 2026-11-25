@@ -37,6 +37,7 @@ public partial class MainWindow : Window
         _history = history;
         _sharing = new ShareService(history);
         InitializeComponent();
+        if (WindowsPackage.HasIdentity) FirewallButton.Visibility = Visibility.Collapsed;
         _internet = new InternetSharing(Surface, _sharing);
         _tray = new ShareTray(Reopen, ExitFromTray);
         SendNav.IsChecked = true;

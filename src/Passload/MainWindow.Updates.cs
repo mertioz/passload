@@ -1,3 +1,5 @@
+using System.ComponentModel;
+using System.Diagnostics;
 using System.Windows;
 
 namespace Passload;
@@ -10,6 +12,11 @@ public partial class MainWindow
 
     internal void StartUpdateChecks(string? startup)
     {
+        if (WindowsPackage.HasIdentity)
+        {
+            CheckUpdateButton.Content = "Mises à jour du Microsoft Store";
+            return;
+        }
         CheckUpdateButton.IsEnabled = AppUpdate.Available;
         if (!AppUpdate.Available) return;
         AppUpdate.CleanOldDownloads();
@@ -23,7 +30,16 @@ public partial class MainWindow
         _ = CheckUpdatesAsync(manual: false);
     }
 
-    private async void CheckUpdate(object sender, RoutedEventArgs e) => await CheckUpdatesAsync(manual: true);
+    private async void CheckUpdate(object sender, RoutedEventArgs e)
+    {
+        if (!WindowsPackage.HasIdentity)
+        {
+            await CheckUpdatesAsync(manual: true);
+            return;
+        }
+        try { Process.Start(new ProcessStartInfo("ms-windows-store://downloadsandupdates") { UseShellExecute = true }); }
+        catch (Win32Exception ex) { Notice(Friendly(ex), true); }
+    }
 
     private async Task CheckUpdatesAsync(bool manual)
     {

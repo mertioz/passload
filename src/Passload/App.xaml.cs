@@ -100,6 +100,7 @@ internal static class Firewall
     public static async Task EnsureInboundAsync(int port, CancellationToken cancellation)
     {
         cancellation.ThrowIfCancellationRequested();
+        if (WindowsPackage.HasIdentity) return;
         if (!NeedsAuthorization(port)) return;
         try { await RequestAsync(port, cancellation); }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)

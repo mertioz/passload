@@ -86,7 +86,7 @@
       <TextBlock Text="Nom de domaine pour le certificat HTTPS" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
       <TextBox x:Name="PublicHostInput" Margin="0,0,0,10" AutomationProperties.Name="Nom de domaine pour le certificat HTTPS"
        ToolTip="Nom couvert par un certificat valide installé dans Windows. Laissez ce champ vide pour les liens par adresse IP."/>
-      <WrapPanel><Button Content="Enregistrer" Click="SaveNetwork" Margin="0,0,6,4"/><Button Content="Autoriser dans le pare-feu" Click="RequestFirewall" Margin="0,0,0,4"/></WrapPanel>
+      <WrapPanel><Button Content="Enregistrer" Click="SaveNetwork" Margin="0,0,6,4"/><Button x:Name="FirewallButton" Content="Autoriser dans le pare-feu" Click="RequestFirewall" Margin="0,0,0,4"/></WrapPanel>
      </StackPanel></Expander>
      <WrapPanel Margin="0,16,0,0">
       <Button x:Name="CheckUpdateButton" Content="Vérifier les mises à jour" Click="CheckUpdate" Margin="0,0,8,4"/>

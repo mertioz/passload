@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>site.aymen.Passload</id>
+  <name>Passload</name>
+  <summary>Partager des fichiers par lien temporaire</summary>
+  <summary xml:lang="en">Share files with a temporary link</summary>
+  <description>
+    <p>Créez un lien de téléchargement temporaire pour les fichiers que vous choisissez. Les fichiers sont servis depuis votre appareil.</p>
+    <p xml:lang="en">Create temporary download links for the files you select. Downloads are served from your device.</p>
+  </description>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <developer id="site.aymen">
+    <name>mertioz</name>
+  </developer>
+  <launchable type="desktop-id">site.aymen.Passload.desktop</launchable>
+  <url type="homepage">https://github.com/mertioz/passload</url>
+  <url type="bugtracker">https://github.com/mertioz/passload/issues</url>
+</component>

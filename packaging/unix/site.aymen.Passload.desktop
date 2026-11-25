@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Passload
+Comment=Partager des fichiers par lien temporaire
+Exec=passload --interactive
+TryExec=passload
+Icon=site.aymen.Passload
+Terminal=true
+Categories=Network;FileTransfer;

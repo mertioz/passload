@@ -2,11 +2,13 @@
 
 Partagez un ou plusieurs fichiers depuis Windows, Linux ou macOS avec un lien temporaire. Le destinataire ouvre le lien dans son navigateur et télécharge un fichier ou toute la sélection en ZIP. L’appareil expéditeur garde les originaux.
 
-**[Télécharger Passload pour Windows x64](https://github.com/mertioz/passload/releases/latest/download/Passload.exe)** · [Archives Linux et macOS, versions et empreintes SHA-256](https://github.com/mertioz/passload/releases)
+**[Installateurs et archives de Passload](https://github.com/mertioz/passload/releases)** · [Exécutable portable Windows x64](https://github.com/mertioz/passload/releases/latest/download/Passload.exe)
 
 ![Fenêtre principale de Passload](docs/passload.png)
 
 ## Envoyer sous Windows
+
+`Passload-Setup.exe` ajoute Passload au menu Démarrer et à **Applications installées**. `Passload.exe` peut être lancé directement depuis son dossier.
 
 1. Lancez `Passload.exe`. Déposez les fichiers dans la fenêtre ou choisissez **Parcourir les fichiers**.
 2. Choisissez la durée et cliquez sur **Créer le lien**. Le type proposé est **WebRTC · IP publique**. Envoyez l’adresse complète à votre destinataire. Les liens publics commencent par `https://transfer.aymen.site/`.
@@ -14,7 +16,7 @@ Partagez un ou plusieurs fichiers depuis Windows, Linux ou macOS avec un lien te
 
 **Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Modifier le lien** permet de changer le titre et la description que le destinataire voit sur la page. L’adresse reste utilisable. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration met aussi fin au partage.
 
-L’exécutable Windows vérifie les versions GitHub au lancement et toutes les heures. Le bouton **Vérifier les mises à jour** se trouve dans **Connexion**. Passload vérifie l’empreinte SHA-256 du fichier publié et attend la fin des opérations en cours avant de remplacer l’exécutable.
+Les éditions GitHub vérifient les versions au lancement et toutes les heures. Le bouton **Vérifier les mises à jour** se trouve dans **Connexion**. Passload vérifie l’empreinte SHA-256 du fichier publié et attend la fin des opérations en cours avant de remplacer l’exécutable. Le Microsoft Store gère les mises à jour de son édition MSIX.
 
 ### Partager en arrière-plan
 
@@ -56,7 +58,13 @@ L’onglet **Recevoir** ouvre aussi les anciens liens GitHub Pages avec le lecte
 
 ## Linux et macOS
 
-Extrayez l’archive correspondant à votre architecture. Dans le terminal, lancez `./passload document.pdf photo.jpg` pour partager en HTTPS ou ajoutez `--local` pour le réseau local. Laissez le terminal ouvert pendant le partage. Pour recevoir avec vérification de l’empreinte, utilisez `./passload --receive 'LIEN' destination`. Avec plusieurs fichiers, `destination` reçoit le ZIP. `./passload --help` affiche les options.
+Installez le paquet adapté à votre système et à votre architecture. Debian et Ubuntu utilisent le `.deb`, Fedora et les distributions compatibles le `.rpm`, et macOS le `.pkg`. Les paquets Linux enregistrent Passload dans le gestionnaire de paquets et ajoutent une entrée au menu des applications. Chaque plateforme propose aussi une archive portable.
+
+Dans le terminal, lancez `passload document.pdf photo.jpg` pour partager en HTTPS ou ajoutez `--local` pour le réseau local. Depuis une archive extraite, lancez `./passload`. Laissez le terminal ouvert pendant le partage. Pour recevoir avec vérification de l’empreinte, utilisez `passload --receive 'LIEN' destination`. Avec plusieurs fichiers, `destination` reçoit le ZIP. `passload --help` affiche les options.
+
+Passload vérifie GitHub au démarrage d’un partage ou d’une réception, puis toutes les heures. L’édition portable vérifie le SHA-256 et se met à jour après le transfert. `passload --check-update` lance une vérification manuelle. Pour les éditions installées, la commande récupère et vérifie le paquet que le gestionnaire du système peut installer.
+
+Les paquets et archives Linux sont attestés par Sigstore. Vérifiez votre téléchargement avec `gh attestation verify fichier -R mertioz/passload`.
 
 ## Compiler et vérifier
 
@@ -68,7 +76,7 @@ dotnet run -c Release --project tests/Passload.Checks
 dotnet publish src/Passload/Passload.csproj -c Release -r win-x64 -p:PublishProfile=Portable -o artifacts/release
 ```
 
-Les tests locaux vérifient notamment l’expiration, la révocation, les réponses HTTPS, le ZIP et les redirections simulées. L’option `--network` du programme de vérification teste aussi l’interface réseau et l’ouverture temporaire d’un port avec un fichier de démonstration. Le workflow **Versions Linux et macOS** construit les archives x64 et arm64 et teste un transfert sur chaque système.
+Les tests locaux vérifient notamment l’expiration, la révocation, les réponses HTTPS, le ZIP et les redirections simulées. L’option `--network` du programme de vérification teste aussi l’interface réseau et l’ouverture temporaire d’un port avec un fichier de démonstration. Le workflow **Installateurs Passload** construit et vérifie les installations Windows, Linux et macOS. [Confidentialité](PRIVACY.md)
 
 Le workflow manuel **Partage par IP publique** vérifie un lien de démonstration depuis un autre réseau. Il bloque les téléchargements HTTPS pendant le test WebRTC, puis désactive WebRTC pour vérifier le secours sur la même adresse.
 

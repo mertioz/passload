@@ -1,6 +1,6 @@
 using System.Globalization;
-using System.Reflection;
 using System.Runtime.InteropServices;
+using Passload.Cli;
 using Passload.Core;
 
 const string help = """
@@ -8,6 +8,7 @@ const string help = """
 
     passload [options] fichier [fichier ...]
     passload --receive lien destination
+    passload --check-update
 
     --local             Partage HTTPS sur le réseau local
     --duration 1h       Validité du lien, en minutes (m), heures (h) ou jours (d)
@@ -27,8 +28,18 @@ if (args is [] or ["--help"] or ["-h"])
 }
 if (args is ["--version"])
 {
-    Console.WriteLine(Assembly.GetExecutingAssembly().GetName().Version?.ToString(3));
+    Console.WriteLine(GitHubUpdates.CurrentVersion.ToString(3));
     return 0;
+}
+
+if (args is ["--interactive"])
+{
+    Console.WriteLine("Saisissez un chemin de fichier par ligne. Validez une ligne vide pour créer le lien.");
+    var selected = new List<string>();
+    while (Console.ReadLine() is { Length: > 0 } file)
+        selected.Add(file.Trim().Trim('"'));
+    if (selected.Count == 0) return 0;
+    args = ["--", .. selected];
 }
 
 using var stop = new CancellationTokenSource();
@@ -39,8 +50,14 @@ using var terminate = OperatingSystem.IsWindows() ? null : PosixSignalRegistrati
 
 try
 {
+    if (args is ["--check-update"])
+    {
+        await PortableUpdates.CheckNowAsync(stop.Token);
+        return 0;
+    }
     if (args is ["--receive", var link, var destination])
     {
+        await using var updates = PortableUpdates.Start(stop.Token);
         using var client = new ReceiveClient(link);
         var manifest = await client.InspectAsync(stop.Token);
         await client.DownloadAsync(manifest.Files.Length == 1 ? manifest.Files[0] : null, destination, null, stop.Token);
@@ -83,6 +100,7 @@ try
     }
 
     if (files.Count == 0) throw new ArgumentException("Indiquez au moins un fichier. Utilisez --help.");
+    await using var sendUpdates = PortableUpdates.Start(stop.Token);
     await using var sharing = new ShareService();
     var share = await sharing.CreateAsync(files, duration, scope, port, address, stop.Token, publicHost: domain);
     share.UpdateDetails(title, description);

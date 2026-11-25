@@ -1,4 +1,4 @@
-name: Versions Linux et macOS
+name: Installateurs Passload
 on:
   workflow_dispatch:
   push:
@@ -6,8 +6,11 @@ on:
     paths:
       - '.github/workflows/portable.yml'
       - 'Directory.Build.props'
+      - 'packaging/**'
+      - 'src/Passload/**'
       - 'src/Passload.Cli/**'
       - 'src/Passload.Core/**'
+      - 'tests/Passload.CliChecks/**'
 
 permissions:
   contents: read
@@ -17,6 +20,11 @@ jobs:
     name: ${{ matrix.rid }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     strategy:
       fail-fast: false
       matrix:
@@ -58,12 +66,96 @@ jobs:
           wait "$sender"
           trap - EXIT
           if "$app" --receive "$link" "$RUNNER_TEMP/closed.txt"; then exit 1; fi
-      - name: Préparer l’archive
+          dotnet run --project tests/Passload.CliChecks -c Release
+      - name: Installer les outils de création de paquets Linux
+        if: runner.os == 'Linux'
+        run: sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends rpm desktop-file-utils
+      - name: Construire les installateurs et l’archive
+        shell: bash
+        run: bash packaging/unix/build.sh "$RID" "$RUNNER_TEMP/bin/passload" "$RUNNER_TEMP/packages"
+      - name: Vérifier l’installation Linux
+        if: runner.os == 'Linux'
+        shell: bash
         run: |
-          cp LICENSE "$RUNNER_TEMP/bin/LICENSE"
-          tar -czf "passload-$RID.tar.gz" -C "$RUNNER_TEMP/bin" passload LICENSE
+          base="$RUNNER_TEMP/packages/passload-$RID"
+          version=$("$RUNNER_TEMP/bin/passload" --version)
+          sudo dpkg -i "$base.deb"
+          test "$(dpkg-query -W -f='${Version}' passload)" = "$version"
+          test "$(/usr/bin/passload --version)" = "$version"
+          desktop-file-validate /usr/share/applications/site.aymen.Passload.desktop
+          test "$(cat /usr/lib/passload/package-format)" = deb
+          sudo dpkg -r passload
+          root="$RUNNER_TEMP/rpm-test"
+          mkdir -p "$root"
+          sudo rpm --root "$root" --initdb
+          sudo rpm --root "$root" -i --nodeps "$base.rpm"
+          test "$(sudo rpm --root "$root" -q --qf '%{VERSION}' passload)" = "$version"
+          test "$("$root/usr/bin/passload" --version)" = "$version"
+          test "$(cat "$root/usr/lib/passload/package-format")" = rpm
+      - name: Vérifier l’installation macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: |
+          version=$("$RUNNER_TEMP/bin/passload" --version)
+          sudo installer -pkg "$RUNNER_TEMP/packages/passload-$RID.pkg" -target /
+          pkgutil --pkg-info site.aymen.passload
+          test "$(/usr/local/bin/passload --version)" = "$version"
+      - name: Attester les fichiers Linux avec Sigstore
+        if: runner.os == 'Linux'
+        uses: actions/attest@v4
+        with:
+          subject-path: '${{ runner.temp }}/packages/passload-${{ matrix.rid }}.*'
       - uses: actions/upload-artifact@v4
         with:
           name: passload-${{ matrix.rid }}
-          path: passload-${{ matrix.rid }}.tar.gz
+          path: ${{ runner.temp }}/packages/passload-${{ matrix.rid }}.*
+          if-no-files-found: error
+
+  windows:
+    name: windows-x64
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Construire l’exécutable et l’installateur Windows
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP packages
+          dotnet publish src/Passload/Passload.csproj -c Release -r win-x64 -p:PublishProfile=Portable -o $out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $version = ([xml](Get-Content -Raw Directory.Build.props)).Project.PropertyGroup.Version
+          $binary = Join-Path $out 'Passload.exe'
+          $hash = (Get-FileHash -LiteralPath $binary).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText($binary + '.sha256', "$hash  Passload.exe`n")
+          ./packaging/windows/build.ps1 -Binary $binary -Version $version -OutputDirectory $out
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ./packaging/store/build.ps1 -Binary $binary -Version $version -OutputDirectory $out
+      - name: Vérifier Applications installées et la désinstallation
+        run: |
+          $out = Join-Path $env:RUNNER_TEMP packages
+          $setup = Join-Path $out 'Passload-Setup.exe'
+          $directory = Join-Path $env:RUNNER_TEMP 'passload-installed'
+          $key = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\Mertioz.Passload_is1'
+          $silent = @('/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-')
+          if ((Get-AuthenticodeSignature -LiteralPath $setup).Status -ne 'NotSigned') { throw 'Signature Windows inattendue.' }
+          $install = Start-Process -FilePath $setup -ArgumentList ($silent + ('/DIR="{0}"' -f $directory)) -WindowStyle Hidden -Wait -PassThru
+          if ($install.ExitCode -ne 0) { throw 'Installation Windows échouée.' }
+          $registration = Get-ItemProperty -LiteralPath $key
+          if ($registration.DisplayName -ne 'Passload') { throw 'Entrée Applications installées absente.' }
+          $installed = Join-Path $directory 'Passload.exe'
+          if ((Get-FileHash $installed).Hash -ne (Get-FileHash (Join-Path $out 'Passload.exe')).Hash) { throw 'Exécutable installé différent.' }
+          $entry = Join-Path ([Environment]::GetFolderPath('Programs')) 'Passload.lnk'
+          if (!(Test-Path -LiteralPath $entry)) { throw 'Raccourci du menu Démarrer absent.' }
+          $uninstall = Start-Process -FilePath (Join-Path $directory 'unins000.exe') -ArgumentList $silent -WindowStyle Hidden -Wait -PassThru
+          if ($uninstall.ExitCode -ne 0 -or (Test-Path -LiteralPath $key)) { throw 'Désinstallation Windows incomplète.' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: passload-windows-x64
+          path: |
+            ${{ runner.temp }}/packages/Passload.exe
+            ${{ runner.temp }}/packages/Passload.exe.sha256
+            ${{ runner.temp }}/packages/Passload-Setup.exe
+            ${{ runner.temp }}/packages/Passload-Store-x64.msix
           if-no-files-found: error
