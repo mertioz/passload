@@ -45,9 +45,10 @@
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <TextBlock Text="Type de lien" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
       <TextBlock Grid.Column="1" Text="Expiration" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
-      <ComboBox x:Name="ConnectionMode" Grid.Row="1" SelectedIndex="0" AutomationProperties.Name="Type de lien" MaxWidth="210" HorizontalAlignment="Left" MinWidth="174">
-       <ComboBoxItem x:Name="DirectMode" Content="Adresse IP publique"/>
-       <ComboBoxItem x:Name="WebRtcMode" Content="WebRTC"/>
+      <ComboBox x:Name="ConnectionMode" Grid.Row="1" SelectedIndex="0" AutomationProperties.Name="Type de lien" HorizontalAlignment="Left" Width="200">
+       <ComboBoxItem x:Name="PublicRtcMode" Content="WebRTC · IP publique"/>
+       <ComboBoxItem x:Name="DirectMode" Content="HTTPS · IP publique"/>
+       <ComboBoxItem x:Name="WebRtcMode" Content="WebRTC sans redirection"/>
        <ComboBoxItem x:Name="LocalMode" Content="Réseau local"/>
       </ComboBox>
       <ComboBox x:Name="Duration" Grid.Row="1" Grid.Column="1" SelectedIndex="1" AutomationProperties.Name="Durée de validité">
@@ -75,9 +76,9 @@
     </StackPanel>
     <StackPanel x:Name="NetworkPage" Visibility="Collapsed">
      <TextBlock Text="Connexion" Style="{StaticResource Title}"/>
-     <TextBlock Text="Avec le type Adresse IP publique, Passload demande une redirection temporaire à la box." Style="{StaticResource Hint}" Margin="0,22,0,0"/>
+     <TextBlock Text="Pour un lien sur l’adresse IP publique, Passload demande une redirection temporaire à la box." Style="{StaticResource Hint}" Margin="0,22,0,0"/>
      <Expander Header="Réglages avancés" Margin="0,18,0,0"><StackPanel Margin="3,12,3,0">
-      <CheckBox x:Name="RelayOption" IsChecked="True" Content="WebRTC · autoriser le relais chiffré" Margin="0,2,0,12" ToolTip="Le relais transmet les données chiffrées pendant le téléchargement, sans stocker les fichiers."/>
+      <CheckBox x:Name="RelayOption" IsChecked="True" Content="Autoriser le relais en mode WebRTC sans redirection" Margin="0,2,0,12" ToolTip="Le relais transmet les données chiffrées pendant le téléchargement, sans stocker les fichiers."/>
       <TextBlock x:Name="LocalAddressText" Style="{StaticResource Hint}"/><TextBlock x:Name="IPv6Text" Style="{StaticResource Hint}" Margin="0,3,0,8"/>
       <WrapPanel><Button Content="Actualiser" Click="RefreshNetwork" Margin="0,0,6,4"/><Button x:Name="RouterButton" Content="Ouvrir ma box" Click="OpenRouter" Margin="0,0,6,4"/></WrapPanel>
       <Grid Margin="0,10,0,10"><Grid.ColumnDefinitions><ColumnDefinition Width="98"/><ColumnDefinition Width="10"/><ColumnDefinition/></Grid.ColumnDefinitions>

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
 using Mono.Nat;
@@ -16,6 +17,12 @@ if (args is ["--direct-check"])
 if (args is ["--browser-fixture", var directory])
 {
     await BrowserFixture.RunAsync(directory);
+    return;
+}
+
+if (args is ["--public-rtc-fixture", var rtcDirectory])
+{
+    await BrowserFixture.RunAsync(rtcDirectory, publicWebRtc: true);
     return;
 }
 
@@ -170,13 +177,30 @@ try
         var localBase = $"/s/{preview.Token}";
         Check((await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"), "aperçu sur le PC expéditeur sans rebouclage de la box");
         Check((await browser.GetStringAsync(localBase+"/files/0")) == await File.ReadAllTextAsync(file), "fichier accessible par l’aperçu local");
-        foreach (var asset in new[]{"","receive.js","wire.js","pipe.js","save.js","disk.js","style.css"})
+        foreach (var asset in new[]{"","receive.js","incoming.js","wire.js","pipe.js","save.js","disk.js","style.css"})
             Check((await browser.GetAsync("/recevoir/"+asset)).IsSuccessStatusCode, "lecteur intégré disponible · "+(asset==""?"page":asset));
         using var wrongHost = new HttpRequestMessage(HttpMethod.Get,localBase);
         wrongHost.Headers.Host = "autre.example";
         Check((await browser.SendAsync(wrongHost)).StatusCode==HttpStatusCode.Forbidden, "moteur local limité à sa propre adresse");
         privateCatalog.Revoke(preview.Token);
         Check((await browser.GetAsync(localBase)).StatusCode==HttpStatusCode.NotFound, "aperçu local révoqué avec le partage");
+
+        var rtc = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Local, origin, server.Fingerprint, "WebRTC", publicWebRtc:true);
+        var rtcBase = rtc.Link.GetLeftPart(UriPartial.Path);
+        Check((await http.GetStringAsync(rtcBase)).Contains("/assets/public-receive.js"), "lecteur WebRTC servi sur l’adresse du partage");
+        Check((await http.GetAsync(rtcBase+"/assets/wire.js")).IsSuccessStatusCode, "module WebRTC fourni par le PC expéditeur");
+        Check((await http.GetAsync(rtcBase+"/assets/pipe.js")).StatusCode == HttpStatusCode.NotFound, "les modules de relais ne sont pas exposés par le lien IP");
+        Check((await http.GetAsync(new Uri(origin, $"/engine/rtc/{rtc.Token}"))).StatusCode == HttpStatusCode.NotFound, "la prise hôte est inaccessible sur le port public");
+        using var crossOrigin = new ClientWebSocket();
+        crossOrigin.Options.CollectHttpResponseDetails = true;
+        crossOrigin.Options.RemoteCertificateValidationCallback = (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == server.Fingerprint;
+        crossOrigin.Options.SetRequestHeader("Origin", "https://autre.example");
+        var socket = new UriBuilder(rtcBase+"/rtc") { Scheme = "wss" }.Uri;
+        using var time = new CancellationTokenSource(TimeSpan.FromSeconds(4));
+        await Throws<WebSocketException>(() => crossOrigin.ConnectAsync(socket, time.Token), "une page d’une autre origine ne rejoint pas la signalisation");
+        Check(crossOrigin.HttpStatusCode == HttpStatusCode.Forbidden, "origine de la signalisation contrôlée");
+        catalog.Revoke(rtc.Token);
+        Check((await http.GetAsync(rtcBase+"/assets/wire.js")).StatusCode == HttpStatusCode.NotFound, "signalisation et ressources révoquées avec le partage");
     }
     if (args.Contains("--network"))
     {

@@ -9,8 +9,12 @@ public sealed class ShareService : IAsyncDisposable
     private bool _closed;
     public Share[] Active => _catalog.Active;
 
+    public Share? FindPublicWebRtc(string token) =>
+        _catalog.Find(token) is { UsesPublicWebRtc: true } share ? share : null;
+
     public async Task<Share> CreateAsync(IEnumerable<string> paths, TimeSpan duration, ShareScope scope, int port,
-        string? manualAddress, CancellationToken cancellation = default, Func<CancellationToken, Task>? authorizeInbound = null)
+        string? manualAddress, CancellationToken cancellation = default, Func<CancellationToken, Task>? authorizeInbound = null,
+        bool publicWebRtc = false)
     {
         var files = await Task.Run(() => SharedFile.Select(paths), cancellation).ConfigureAwait(false);
         var network = NetworkInfo.Read();
@@ -30,7 +34,7 @@ public sealed class ShareService : IAsyncDisposable
             var route = await RouteAsync(network, scope, port, manualAddress, cancellation).ConfigureAwait(false);
             if (authorizeInbound is not null) await authorizeInbound(cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
-            return _catalog.Add(files, duration, scope, route.Origin, _server.Fingerprint, route.Label, route.Mapped);
+            return _catalog.Add(files, duration, scope, route.Origin, _server.Fingerprint, route.Label, route.Mapped, publicWebRtc: publicWebRtc);
         }
         catch
         {
@@ -61,7 +65,7 @@ public sealed class ShareService : IAsyncDisposable
             RouterFailure.PortRejected => "La box répond, mais refuse la redirection temporaire.",
             _ => "Aucun routeur compatible UPnP ou NAT-PMP n’a répondu."
         };
-        throw new InvalidOperationException($"{detail} Vérifiez les réglages dans Connexion ou choisissez WebRTC dans Envoyer.");
+        throw new InvalidOperationException($"{detail} Vérifiez les réglages dans Connexion ou choisissez WebRTC sans redirection.");
     }
 
     public async Task RevokeAsync(string token)

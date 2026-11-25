@@ -58,12 +58,14 @@ public sealed class Share
     public ShareScope Scope { get; }
     public string RouteLabel { get; }
     public Uri Link { get; }
+    public bool UsesPublicWebRtc => RtcRoom is not null;
+    internal PublicRtcRoom? RtcRoom { get; }
     public bool UsesRouter { get; }
     public bool Active => !Ended.IsCancellationRequested && DateTimeOffset.UtcNow < ExpiresAt;
     public long TotalSize { get; }
 
     internal Share(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc)
     {
         if (files.Count == 0 || duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(7))
             throw new ArgumentOutOfRangeException(nameof(duration));
@@ -75,6 +77,7 @@ public sealed class Share
         Scope = scope;
         RouteLabel = routeLabel;
         UsesRouter = usesRouter;
+        RtcRoom = publicWebRtc ? new PublicRtcRoom() : null;
         Link = publicLink ?? new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
     }
 
@@ -91,9 +94,9 @@ public sealed class ShareCatalog
     public Share[] Active => _shares.Values.Where(s => s.Active).OrderBy(s => s.ExpiresAt).ToArray();
 
     public Share Add(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null, bool publicWebRtc = false)
     {
-        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink);
+        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();
         throw new InvalidOperationException("Impossible de générer un lien unique.");

@@ -1,5 +1,6 @@
 import {Peer, deadline, decode, control, asControl, chunk} from "./wire.js";
 import {Meeting} from "./pipe.js";
+import {SocketMeeting} from "./socket-meeting.js";
 
 const active = new Map();
 const notify = (op, token, detail = "") => window.chrome.webview.postMessage({op, token, detail});
@@ -87,7 +88,10 @@ class Session {
     if (!this.live || Date.now() >= this.options.until) return this.end();
     let socket;
     try {
-      socket = await Meeting.create(this.options, msg => {
+      const create = this.options.publicRtc
+        ? (...callbacks) => new SocketMeeting(new URL("/engine/rtc/" + this.options.token, location.href), true, ...callbacks)
+        : (...callbacks) => Meeting.create(this.options, ...callbacks);
+      socket = await create(msg => {
         if (msg.op === "joined") {
           if (!this.peers.has(msg.peer)) this.peers.set(msg.peer, new Outgoing(this, msg.peer));
         } else if (msg.op === "left") {
@@ -104,7 +108,7 @@ class Session {
         if (msg.use === "direct" || (msg.use === "relay" && this.relay)) {
           stream.link.select(msg.use);
           await socket.signal(id, {used:msg.use});
-          if (msg.use === "direct") socket.direct(id);
+          if (msg.use === "direct") socket.direct?.(id);
         } else await stream.link.negotiate(msg);
       }, () => {
         if (socket !== this.socket || !this.live) return;
@@ -126,7 +130,7 @@ class Session {
       socket?.close();
       if (!this.live) return;
       if (this.once) this.schedule();
-      else { notify("failed", this.options.token, "Le service de connexion est injoignable. Réessayez après avoir vérifié Internet."); this.end(); }
+      else { notify("failed", this.options.token, this.options.publicRtc ? "Le moteur WebRTC ne répond pas." : "Le service de connexion est injoignable. Réessayez après avoir vérifié Internet."); this.end(); }
     }
   }
   schedule() {
@@ -148,6 +152,10 @@ window.chrome.webview.addEventListener("message", e => {
   const msg = e.data;
   if (msg.op === "stop") { active.get(msg.token)?.end(); return; }
   if (msg.op !== "start" || active.has(msg.token)) return;
+  if (msg.publicRtc && typeof RTCPeerConnection !== "function") {
+    notify("failed", msg.token, "Le moteur WebRTC est indisponible.");
+    return;
+  }
   const session = new Session(msg);
   active.set(msg.token, session);
   session.expiry = setTimeout(() => session.end(), Math.max(0, msg.until - Date.now()));

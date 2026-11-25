@@ -50,9 +50,9 @@ export class Peer {
     this.dc = dc;
     dc.binaryType = "arraybuffer";
     dc.onopen = () => this.direct.resolve(true);
-    dc.onmessage = e => { if (this.transport === "direct") { this.room.touch(this.id); this.packet(new Uint8Array(e.data)); } };
+    dc.onmessage = e => { if (this.transport === "direct") { this.room.touch?.(this.id); this.packet(new Uint8Array(e.data)); } };
     dc.onclose = () => {
-      if (!this.closed && this.transport === "direct") { this.room.disconnected(this.id); this.disconnected(); }
+      if (!this.closed && this.transport === "direct") { this.room.disconnected?.(this.id); this.disconnected(); }
     };
   }
   async offer() {
@@ -89,7 +89,7 @@ export class Peer {
     if (!this.room.host && !this.heartbeat) {
       this.heartbeat = setInterval(() => {
         if (this.transport === "direct" && this.dc?.readyState === "open") {
-          this.room.touch(this.id); this.dc.send(control({t:"ping",id:0}));
+          this.room.touch?.(this.id); this.dc.send(control({t:"ping",id:0}));
         } else this.room.signal(this.id,{alive:true}).catch(()=>{});
       }, 40_000);
     }
@@ -104,5 +104,5 @@ export class Peer {
     }
     this.dc.send(data);
   }
-  close() { this.closed = true; clearInterval(this.heartbeat); this.dc?.close(); this.pc?.close(); }
+  close() { this.closed = true; this.direct.resolve(false); clearInterval(this.heartbeat); this.dc?.close(); this.pc?.close(); }
 }

@@ -9,7 +9,7 @@ Partagez un ou plusieurs fichiers depuis un PC Windows avec un lien temporaire. 
 ## Envoyer
 
 1. Lancez `Passload.exe`. Déposez les fichiers dans la fenêtre ou choisissez **Parcourir les fichiers**.
-2. Choisissez **Adresse IP publique**, **WebRTC** ou **Réseau local** et une durée. Cliquez sur **Créer le lien** et envoyez l’adresse complète à votre destinataire.
+2. Choisissez la durée et cliquez sur **Créer le lien**. Le type proposé est **WebRTC · IP publique**. Envoyez l’adresse complète à votre destinataire.
 3. Gardez Passload ouvert, le PC éveillé et les fichiers à leur emplacement jusqu’à la fin du téléchargement.
 
 **Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration ou la fermeture de Passload met également fin au partage.
@@ -18,17 +18,23 @@ Partagez un ou plusieurs fichiers depuis un PC Windows avec un lien temporaire. 
 
 Ouvrez le lien complet dans un navigateur récent ou collez-le dans **Recevoir** sur un deuxième PC Windows. Les boutons permettent de choisir un fichier ou **Tout télécharger en ZIP**. Le ZIP est construit au fil de l’envoi et les fichiers homonymes conservent des entrées distinctes.
 
-## Adresse IP publique et réseau local
+## WebRTC · IP publique
 
-**Adresse IP publique** crée un lien HTTPS qui pointe vers le PC expéditeur. Passload demande à la box une redirection TCP temporaire par UPnP ou NAT-PMP, puis la renouvelle pendant le partage. Sur une connexion où l’opérateur limite les ports disponibles, Passload essaie des ports externes de différentes plages. Le port reçu de la box figure dans le lien. **Arrêter le partage** permet de libérer la redirection dès que le dernier lien qui l’utilise prend fin.
+Le lien HTTPS ouvre une page servie par le PC expéditeur, qui échange aussi les messages de mise en relation. Le navigateur tente un transfert direct par WebRTC. STUN aide les appareils à découvrir les chemins disponibles. Si le canal WebRTC est bloqué, la même page permet de télécharger directement en HTTPS. [WebRTC](https://www.w3.org/TR/webrtc/)
+
+Passload demande à la box une redirection TCP temporaire par UPnP ou NAT-PMP et la renouvelle pendant le partage. Sur une connexion où l’opérateur limite les ports disponibles, Passload essaie d’autres plages. Le lien contient l’adresse publique et le port accepté par la box. **Arrêter le partage** libère la redirection après le dernier lien qui l’utilise.
 
 Le port local par défaut est **47831**. Windows peut demander une autorisation de pare-feu pour Passload lors du premier partage public. **Connexion → Réglages avancés** permet aussi de préciser une redirection manuelle, un nom de domaine ou les réglages du pare-feu.
 
-Le mode direct nécessite une adresse IP publique joignable. Un opérateur ou un autre routeur peut bloquer les connexions entrantes. **Réseau local** donne un lien pour des appareils connectés au même réseau.
+Le mode principal nécessite une adresse IP publique joignable. Un opérateur ou un autre routeur peut bloquer les connexions entrantes. Le runtime Microsoft Edge WebView2 est nécessaire sur le PC qui envoie via WebRTC. Le téléchargement de secours HTTPS reste accessible si le runtime est absent.
 
-Ces deux types de lien utilisent un certificat créé sur le PC. **Recevoir** vérifie l’empreinte SHA-256. Si un navigateur signale un certificat inconnu, comparez son empreinte à la valeur `#sha256=` du lien reçu avant de poursuivre. Les téléchargements individuels HTTPS acceptent les requêtes de reprise.
+Les liens par adresse IP utilisent un certificat créé sur le PC. **Recevoir** vérifie l’empreinte SHA-256 pour télécharger en HTTPS dans l’application. Si le navigateur signale un certificat inconnu, comparez son empreinte à la valeur `#sha256=` du lien reçu avant de poursuivre. Les téléchargements individuels HTTPS acceptent les requêtes de reprise.
 
-## WebRTC
+## Autres types de lien
+
+**HTTPS · IP publique** utilise directement HTTPS. **Réseau local** permet de partager avec des appareils connectés au même réseau.
+
+## WebRTC sans redirection
 
 - **Mise en relation.** Les deux appareils échangent des messages chiffrés via le service public Piping Server. Un serveur STUN aide WebRTC à identifier les chemins réseau disponibles. Le PC expéditeur vérifie que la mise en relation fonctionne avant de copier le lien. [Piping Server](https://github.com/nwtgck/piping-server) · [WebRTC](https://www.w3.org/TR/webrtc/)
 - **Transfert direct.** Les deux appareils essaient un canal de données WebRTC chiffré par DTLS. Lorsqu’il s’ouvre, les fichiers passent entre les appareils. Ce mode utilise des connexions sortantes et fonctionne sans régler les ports de la box.
@@ -52,7 +58,7 @@ dotnet publish src/Passload/Passload.csproj -c Release -r win-x64 -p:PublishProf
 
 Les tests locaux vérifient notamment l’expiration, la révocation, les réponses HTTPS, le ZIP et les redirections simulées. L’option `--network` du programme de vérification teste aussi l’interface réelle et l’ouverture temporaire d’un port avec un fichier de démonstration.
 
-Le workflow manuel **Réception depuis un autre réseau** démarre un PC Windows expéditeur et trois machines de réception indépendantes. Il génère trois fichiers synthétiques, vérifie chaque téléchargement et les entrées du ZIP par SHA-256, puis ferme le partage. Chromium teste également le relais avec WebRTC désactivé. Aucun compte ni secret applicatif n’est nécessaire pour exécuter ce test.
+Le workflow manuel **Partage par IP publique** vérifie un lien de démonstration depuis un autre réseau. Il bloque les téléchargements HTTPS pendant le test WebRTC, puis désactive WebRTC pour vérifier le secours sur la même adresse. Le workflow **Réception depuis un autre réseau** vérifie séparément le mode WebRTC sans redirection.
 
 ## Licence
 

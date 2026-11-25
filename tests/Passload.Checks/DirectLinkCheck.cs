@@ -29,7 +29,7 @@ internal static class DirectLinkCheck
         using var receiver = new ReceiveClient(link);
         var manifest = await receiver.InspectAsync(token);
         var text = Encoding.UTF8.GetBytes(Text);
-        var bytes = Enumerable.Range(0, 1024).Select(i => (byte)i).ToArray();
+        var bytes = Enumerable.Range(0, 1_048_713).Select(i => (byte)i).ToArray();
         var expected = new Dictionary<string, byte[]> { ["probe.txt"] = text, ["probe.bin"] = bytes };
         if (manifest.Files.Length != expected.Count || manifest.Files.Any(file => !expected.TryGetValue(file.Name, out var sample) || file.Size != sample.Length))
             throw new InvalidDataException("Sélection de démonstration inattendue.");
@@ -55,6 +55,8 @@ internal static class DirectLinkCheck
                 if (!sample.SequenceEqual(buffer.ToArray())) throw new InvalidDataException("L’archive diffère des fichiers d’origine.");
             }
             Console.WriteLine("HTTPS direct depuis un autre réseau. Certificat vérifié, fichier et ZIP identiques.");
+            if (Environment.GetEnvironmentVariable("PASSLOAD_SMOKE_OUTPUT") is { Length: > 0 } path)
+                await File.WriteAllTextAsync(path, link, token);
         }
         finally
         {

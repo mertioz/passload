@@ -34,7 +34,8 @@ public sealed class TransferServer : IAsyncDisposable
     }
 
     public static async Task<TransferServer> StartAsync(ShareCatalog catalog, int port, IEnumerable<IPAddress> addresses,
-        bool loopbackOnly = false, CancellationToken cancellation = default, bool browserEngine = false)
+        bool loopbackOnly = false, CancellationToken cancellation = default, bool browserEngine = false,
+        Func<string, Share?>? publicShares = null)
     {
         if (browserEngine && !loopbackOnly) throw new ArgumentException("Le moteur du navigateur doit rester sur la boucle locale.");
         var certificate = browserEngine ? null : LocalIdentity.Create(addresses);
@@ -51,7 +52,9 @@ public sealed class TransferServer : IAsyncDisposable
             else server.ListenAnyIP(port, endpoint => endpoint.UseHttps(certificate!));
         });
         var app = builder.Build();
-        app.Run(ctx => browserEngine ? ServeEngine(ctx, catalog) : ServeAsync(ctx, catalog));
+        app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
+        Share? Resolve(string token) => catalog.Find(token) ?? publicShares?.Invoke(token);
+        app.Run(ctx => browserEngine ? ServeEngine(ctx, Resolve) : ServeAsync(ctx, catalog.Find));
         try
         {
             await app.StartAsync(cancellation).ConfigureAwait(false);
@@ -65,7 +68,7 @@ public sealed class TransferServer : IAsyncDisposable
         }
     }
 
-    private static async Task ServeEngine(HttpContext ctx, ShareCatalog catalog)
+    private static async Task ServeEngine(HttpContext ctx, Func<string, Share?> resolve)
     {
         if (ctx.Request.Host.Host != "127.0.0.1" || ctx.Request.Host.Port != ctx.Connection.LocalPort)
         {
@@ -73,38 +76,55 @@ public sealed class TransferServer : IAsyncDisposable
             return;
         }
         var path = ctx.Request.Path.Value;
+        const string hostPrefix = "/engine/rtc/";
+        if (path is not null && path.StartsWith(hostPrefix, StringComparison.Ordinal))
+        {
+            var token = path[hostPrefix.Length..];
+            if (token.Length == 43 && resolve(token) is { RtcRoom: { } room } share)
+                await room.RunHostAsync(ctx, share.Ended);
+            else ctx.Response.StatusCode = 404;
+            return;
+        }
         string? asset = path switch
         {
             "/engine/host.js" => "host.js",
             "/engine/wire.js" or "/recevoir/wire.js" => "wire.js",
             "/engine/pipe.js" or "/recevoir/pipe.js" => "pipe.js",
+            "/engine/socket-meeting.js" => "socket-meeting.js",
             "/recevoir/" => "index.html",
             "/recevoir/style.css" => "style.css",
             "/recevoir/receive.js" => "receive.js",
+            "/recevoir/incoming.js" => "incoming.js",
             "/recevoir/save.js" => "save.js",
             "/recevoir/disk.js" => "disk.js",
             _ => null
         };
         if (path != "/engine/host" && asset is null)
         {
-            await ServeAsync(ctx, catalog);
+            await ServeAsync(ctx, resolve);
             return;
         }
         ctx.Response.Headers.CacheControl = "no-store";
         ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
-        ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' https://ppng.io; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+        ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* https://ppng.io; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
         if (path == "/engine/host")
         {
             ctx.Response.ContentType = "text/html; charset=utf-8";
             await ctx.Response.WriteAsync("<!doctype html><meta charset=utf-8><title>Passload</title><script type=module src='/engine/host.js'></script>");
             return;
         }
+        await ServeAssetAsync(ctx, asset!);
+    }
+
+    private static async Task ServeAssetAsync(HttpContext ctx, string asset)
+    {
         ctx.Response.ContentType = asset switch { "style.css" => "text/css", "index.html" => "text/html; charset=utf-8", _ => "text/javascript; charset=utf-8" };
+        if (HttpMethods.IsHead(ctx.Request.Method)) return;
         using var resource = typeof(TransferServer).Assembly.GetManifestResourceStream("Passload." + asset)!;
         await resource.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
     }
 
-    private static async Task ServeAsync(HttpContext ctx, ShareCatalog catalog)
+    private static async Task ServeAsync(HttpContext ctx, Func<string, Share?> resolve)
     {
         var response = ctx.Response;
         response.Headers.CacheControl = "no-store";
@@ -120,7 +140,7 @@ public sealed class TransferServer : IAsyncDisposable
         }
         var parts = (ctx.Request.Path.Value ?? "").Split('/');
         if (parts.Length is < 3 or > 5 || parts[1] != "s" || parts[2].Length != 43 ||
-            catalog.Find(parts[2]) is not { } share ||
+            resolve(parts[2]) is not { } share ||
             (share.Scope == ShareScope.Local && !NetworkInfo.IsLocalPeer(ctx.Connection.RemoteIpAddress)))
         {
             await Unavailable(ctx);
@@ -131,8 +151,27 @@ public sealed class TransferServer : IAsyncDisposable
         {
             if (parts.Length == 3 || (parts.Length == 4 && parts[3] == ""))
             {
+                if (share.UsesPublicWebRtc)
+                {
+                    var socket = (ctx.Request.IsHttps ? "wss://" : "ws://") + ctx.Request.Host;
+                    response.Headers["Content-Security-Policy"] = $"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; worker-src 'self'; connect-src 'self' {socket}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+                }
                 await Html(ctx, 200, Landing(share));
                 return;
+            }
+            if (share.RtcRoom is { } room)
+            {
+                if (parts.Length == 4 && parts[3] == "rtc")
+                {
+                    await room.RunGuestAsync(ctx, share.Ended);
+                    return;
+                }
+                if (parts.Length == 5 && parts[3] == "assets" &&
+                    parts[4] is "public-receive.js" or "incoming.js" or "socket-meeting.js" or "wire.js" or "save.js" or "disk.js")
+                {
+                    await ServeAssetAsync(ctx, parts[4]);
+                    return;
+                }
             }
             if (parts.Length == 4 && parts[3] == "manifest")
             {
@@ -211,13 +250,17 @@ public sealed class TransferServer : IAsyncDisposable
         foreach (var file in share.Files)
         {
             var name = WebUtility.HtmlEncode(file.Name);
-            items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {name}'>Télécharger</a></li>");
+            var rtc = share.UsesPublicWebRtc ? $" data-item='{file.Id}' data-size='{file.Size}' data-name='{name}'" : "";
+            items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {name}'{rtc}>Télécharger</a></li>");
         }
         var single = share.Files.Count == 1;
         var title = single ? "Un fichier partagé" : $"{share.Files.Count} fichiers partagés";
         var expiry = share.ExpiresAt.UtcDateTime.ToString("dd MMM yyyy 'à' HH:mm 'UTC'", CultureInfo.GetCultureInfo("fr-FR"));
-        var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'>Tout télécharger en ZIP</a>";
-        var body = $"<h1>{title}</h1><p>{Display.Size(share.TotalSize)}</p><ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p>";
+        var zipRtc = share.UsesPublicWebRtc ? $" data-item='zip' data-size='{share.TotalSize}' data-name='Passload.zip'" : "";
+        var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'{zipRtc}>Tout télécharger en ZIP</a>";
+        var status = share.UsesPublicWebRtc ? "<p id='status' role='status'>Téléchargement HTTPS disponible.</p><a id='saved' class='note' hidden></a>" : "";
+        var script = share.UsesPublicWebRtc ? $"<script type='module' src='{basePath}/assets/public-receive.js'></script>" : "";
+        var body = $"<h1>{title}</h1><p>{Display.Size(share.TotalSize)}</p>{status}<ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p>{script}";
         return Template.Replace("<!--content-->", body);
     }
 

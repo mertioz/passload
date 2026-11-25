@@ -29,7 +29,7 @@ public partial class MainWindow : Window
     public MainWindow()
     {
         InitializeComponent();
-        _internet = new InternetSharing(Surface);
+        _internet = new InternetSharing(Surface, _sharing);
         SendNav.IsChecked = true;
         PortInput.Text = _settings.Port.ToString();
         ManualInput.Text = _settings.Manual;
@@ -134,25 +134,27 @@ public partial class MainWindow : Window
         _creating = true;
         FileCard.IsEnabled = OptionsCard.IsEnabled = CreateButton.IsEnabled = false;
         var scope = ConnectionMode.SelectedItem == LocalMode ? ShareScope.Local : ShareScope.Internet;
-        var webRtc = ConnectionMode.SelectedItem == WebRtcMode;
+        var hostedRtc = ConnectionMode.SelectedItem == WebRtcMode;
+        var publicRtc = ConnectionMode.SelectedItem == PublicRtcMode;
         var minutes = int.Parse((string)((ComboBoxItem)Duration.SelectedItem).Tag);
         CreateButton.Content = scope == ShareScope.Internet ? "Connexion en cours…" : "Création en cours…";
         try
         {
             var files = _draft.Keys.ToArray();
             var duration = TimeSpan.FromMinutes(minutes);
-            var port = _settings.Port;
-            _createTask = webRtc
+            _createTask = hostedRtc
                 ? _internet.CreateAsync(files, duration, RelayOption.IsChecked == true, _lifetime.Token)
-                : _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
-                    scope == ShareScope.Internet ? token => Firewall.EnsureInboundAsync(port, token) : null);
+                : CreateAddressShareAsync(files, duration, scope, publicRtc);
             var share = await _createTask;
             if (_closing) return;
             _draft.Clear();
             RefreshLinks();
             LinksNav.IsChecked = true;
             var copied = Copy(share.Link.AbsoluteUri);
-            Notice(copied ? "Lien copié." : "Lien créé. Sélectionnez son adresse pour la copier.");
+            var message = copied ? "Lien copié." : "Lien créé. Sélectionnez son adresse pour la copier.";
+            if (share.UsesPublicWebRtc && _internet.IsOffline(share.Token))
+                message += " WebRTC est momentanément indisponible. Le lien utilise HTTPS.";
+            Notice(message);
         }
         catch (Exception ex) { if (!_closing) Notice(Friendly(ex), true); }
         finally
@@ -165,9 +167,19 @@ public partial class MainWindow : Window
         }
     }
 
+    private async Task<Share> CreateAddressShareAsync(string[] files, TimeSpan duration, ShareScope scope, bool publicRtc)
+    {
+        var port = _settings.Port;
+        var share = await _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
+            scope == ShareScope.Internet ? token => Firewall.EnsureInboundAsync(port, token) : null,
+            publicWebRtc: publicRtc);
+        if (publicRtc) await _internet.PreparePublicAsync(share, _lifetime.Token);
+        return share;
+    }
+
     private void RefreshLinks()
     {
-        var active = _sharing.Active.Concat(_internet.Active).OrderBy(s => s.ExpiresAt).ToArray();
+        var active = _sharing.Active.Where(s => !_internet.IsStarting(s.Token)).Concat(_internet.Active).OrderBy(s => s.ExpiresAt).ToArray();
         var key = string.Join('/', active.Select(s => s.Token + (_internet.IsOffline(s.Token) ? "-" : "+")));
         if (key == _lastLinks) return;
         _lastLinks = key;
@@ -192,6 +204,7 @@ public partial class MainWindow : Window
         box.Children.Add(new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = string.Join("\n", share.Files.Select(f => f.Name)), Style = (Style)FindResource("SectionTitle") });
         var until = share.ExpiresAt.LocalDateTime.ToString("dd MMM à HH:mm");
         var route = _internet.IsOffline(share.Token) ? "Reconnexion en cours…" : share.RouteLabel;
+        if (share.UsesPublicWebRtc) route = _internet.IsOffline(share.Token) ? "Secours HTTPS" : $"WebRTC · {share.RouteLabel}";
         box.Children.Add(new TextBlock { Text = $"{Display.Count(share.Files.Count)} · {Display.Size(share.TotalSize)} · {route} · Expire le {until}", Style = (Style)FindResource("Hint"), Margin = new Thickness(0, 4, 0, 10) });
         var url = new TextBox { IsReadOnly = true, Text = share.Link.AbsoluteUri, FontSize = 13 };
         url.GotKeyboardFocus += (_, _) => url.SelectAll();
@@ -204,15 +217,21 @@ public partial class MainWindow : Window
         var preview = new Button { Content = "Ouvrir ici", Margin = new Thickness(0, 0, 8, 0) };
         preview.Click += async (_, _) =>
         {
-            if (InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out var remote))
+            try
             {
-                try { var page = await _internet.ReaderUriAsync(remote!, _lifetime.Token); Process.Start(new ProcessStartInfo(page.AbsoluteUri) { UseShellExecute=true }); }
-                catch (Exception ex) { Notice(Friendly(ex), true); }
-                return;
+                var page = _internet.PublicPreview(share);
+                if (page is null && InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out var remote))
+                    page = await _internet.ReaderUriAsync(remote!, _lifetime.Token);
+                if (page is not null)
+                {
+                    Process.Start(new ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
+                    return;
+                }
+                ReceiveNav.IsChecked = true;
+                ReceiveUrl.Text = share.Link.AbsoluteUri;
+                InspectLink(preview, new RoutedEventArgs());
             }
-            ReceiveNav.IsChecked = true;
-            ReceiveUrl.Text = share.Link.AbsoluteUri;
-            InspectLink(preview, new RoutedEventArgs());
+            catch (Exception ex) { Notice(Friendly(ex), true); }
         };
         stop.Click += async (_, _) =>
         {
@@ -220,7 +239,11 @@ public partial class MainWindow : Window
             try
             {
                 if (InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out _)) _internet.Revoke(share.Token);
-                else await _sharing.RevokeAsync(share.Token);
+                else
+                {
+                    _internet.RemovePublic(share.Token);
+                    await _sharing.RevokeAsync(share.Token);
+                }
                 RefreshLinks(); Notice("Partage arrêté.");
             }
             catch (Exception ex) { Notice(Friendly(ex), true); }

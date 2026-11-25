@@ -15,10 +15,29 @@ jobs:
   receive:
     name: Télécharger depuis un autre réseau
     runs-on: ubuntu-24.04
-    timeout-minutes: 6
+    timeout-minutes: 9
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 10.0.x
-      - run: dotnet run --project tests/Passload.Checks -c Release -- --direct-check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Installer le navigateur de test
+        working-directory: tests/browser
+        run: |
+          npm ci --no-audit --no-fund
+          npx --no-install playwright-core install --with-deps chromium
+      - name: Vérifier HTTPS et le contenu
+        env:
+          PASSLOAD_SMOKE_OUTPUT: ${{ runner.temp }}/fixture-link
+        run: dotnet run --project tests/Passload.Checks -c Release -- --direct-check
+      - name: Vérifier WebRTC et le secours sur le même lien
+        working-directory: tests/browser
+        env:
+          PASSLOAD_SMOKE_OUTPUT: ${{ runner.temp }}/fixture-link
+        run: node public-receive.mjs
+      - name: Retirer le lien de test
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/fixture-link"
