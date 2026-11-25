@@ -185,7 +185,11 @@ try
         privateCatalog.Revoke(preview.Token);
         Check((await browser.GetAsync(localBase)).StatusCode==HttpStatusCode.NotFound, "aperçu local révoqué avec le partage");
 
-        var rtc = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Local, origin, server.Fingerprint, "WebRTC", publicWebRtc:true);
+    }
+    var rtc = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Local, origin, server.Fingerprint, "WebRTC", publicWebRtc:true);
+    await using (var engine = await TransferServer.StartAsync(new ShareCatalog(), 0, [], loopbackOnly:true,
+        browserEngine:true, publicShares:catalog.Find))
+    {
         var rtcBase = rtc.Link.GetLeftPart(UriPartial.Path);
         Check((await http.GetStringAsync(rtcBase)).Contains("/assets/public-receive.js"), "lecteur WebRTC servi sur l’adresse du partage");
         Check((await http.GetAsync(rtcBase+"/assets/wire.js")).IsSuccessStatusCode, "module WebRTC fourni par le PC expéditeur");
@@ -199,6 +203,26 @@ try
         using var time = new CancellationTokenSource(TimeSpan.FromSeconds(4));
         await Throws<WebSocketException>(() => crossOrigin.ConnectAsync(socket, time.Token), "une page d’une autre origine ne rejoint pas la signalisation");
         Check(crossOrigin.HttpStatusCode == HttpStatusCode.Forbidden, "origine de la signalisation contrôlée");
+        using var host = new ClientWebSocket();
+        host.Options.SetRequestHeader("Origin", $"http://127.0.0.1:{engine.Port}");
+        await host.ConnectAsync(new Uri($"ws://127.0.0.1:{engine.Port}/engine/rtc/{rtc.Token}"), time.Token);
+        using var guest = new ClientWebSocket();
+        guest.Options.HttpVersion = HttpVersion.Version20;
+        guest.Options.HttpVersionPolicy = HttpVersionPolicy.RequestVersionExact;
+        guest.Options.SetRequestHeader("Origin", origin.GetLeftPart(UriPartial.Authority));
+        using var http2 = new HttpMessageInvoker(new SocketsHttpHandler
+        {
+            UseProxy = false,
+            SslOptions = new()
+            {
+                RemoteCertificateValidationCallback = (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == server.Fingerprint
+            }
+        });
+        await guest.ConnectAsync(socket, http2, time.Token);
+        var message = new byte[1024];
+        var ready = await guest.ReceiveAsync(message.AsMemory(), time.Token);
+        Check(guest.State == WebSocketState.Open && Encoding.UTF8.GetString(message, 0, ready.Count).Contains("\"op\":\"ready\""),
+            "la signalisation WebSocket accepte CONNECT en HTTPS sur HTTP/2");
         catalog.Revoke(rtc.Token);
         Check((await http.GetAsync(rtcBase+"/assets/wire.js")).StatusCode == HttpStatusCode.NotFound, "signalisation et ressources révoquées avec le partage");
     }

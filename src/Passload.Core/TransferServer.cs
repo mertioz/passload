@@ -132,7 +132,9 @@ public sealed class TransferServer : IAsyncDisposable
         response.Headers["X-Content-Type-Options"] = "nosniff";
         response.Headers["Content-Security-Policy"] = "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
         var head = HttpMethods.IsHead(ctx.Request.Method);
-        if (!HttpMethods.IsGet(ctx.Request.Method) && !head)
+        var upgrade = ctx.WebSockets.IsWebSocketRequest;
+        // An HTTP/2 WebSocket handshake uses CONNECT. Only the share's signalling route can accept it.
+        if (!HttpMethods.IsGet(ctx.Request.Method) && !head && !upgrade)
         {
             response.Headers.Allow = "GET, HEAD";
             response.StatusCode = 405;
@@ -149,6 +151,16 @@ public sealed class TransferServer : IAsyncDisposable
         using var abort = share.Ended.Register(ctx.Abort);
         try
         {
+            if (parts.Length == 4 && parts[3] == "rtc" && share.RtcRoom is { } room)
+            {
+                await room.RunGuestAsync(ctx, share.Ended);
+                return;
+            }
+            if (upgrade)
+            {
+                response.StatusCode = 404;
+                return;
+            }
             if (parts.Length == 3 || (parts.Length == 4 && parts[3] == ""))
             {
                 if (share.UsesPublicWebRtc)
@@ -159,19 +171,11 @@ public sealed class TransferServer : IAsyncDisposable
                 await Html(ctx, 200, Landing(share));
                 return;
             }
-            if (share.RtcRoom is { } room)
+            if (share.UsesPublicWebRtc && parts.Length == 5 && parts[3] == "assets" &&
+                parts[4] is "public-receive.js" or "incoming.js" or "socket-meeting.js" or "wire.js" or "save.js" or "disk.js")
             {
-                if (parts.Length == 4 && parts[3] == "rtc")
-                {
-                    await room.RunGuestAsync(ctx, share.Ended);
-                    return;
-                }
-                if (parts.Length == 5 && parts[3] == "assets" &&
-                    parts[4] is "public-receive.js" or "incoming.js" or "socket-meeting.js" or "wire.js" or "save.js" or "disk.js")
-                {
-                    await ServeAssetAsync(ctx, parts[4]);
-                    return;
-                }
+                await ServeAssetAsync(ctx, parts[4]);
+                return;
             }
             if (parts.Length == 4 && parts[3] == "manifest")
             {
