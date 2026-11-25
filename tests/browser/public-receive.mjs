@@ -93,15 +93,16 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
     await page.goto(link.href, {waitUntil:"domcontentloaded"}).catch(() => {
       throw new Error("La page du PC expéditeur est inaccessible.");
     });
-    const directStatus = "Connexion WebRTC directe.", httpsStatus = "Téléchargement HTTPS direct.";
     const status = page.locator("#status");
-    await page.waitForFunction(modes => modes.includes(document.getElementById("status")?.textContent),
-      [directStatus, httpsStatus], {timeout:40_000}).catch(async () => {
+    await page.waitForFunction(() => ["webrtc","https"].includes(document.documentElement.dataset.transfer),
+      null, {timeout:40_000}).catch(async () => {
       throw new Error("Statut reçu · " + await status.textContent());
     });
-    const webRtc = await status.textContent() === directStatus;
+    const webRtc = await page.locator("html").getAttribute("data-transfer") === "webrtc";
+    assert.equal(await page.locator("header").count(), 0);
+    assert(await status.isHidden(), "La page au repos n’affiche pas le mode de connexion.");
     if (webRtcBlocked) assert(!webRtc);
-    else if (loopback) assert(webRtc, "WebRTC doit fonctionner en boucle locale.");
+    else if (loopback || process.env.PASSLOAD_REQUIRE_WEBRTC === "1") assert(webRtc, "Le test local doit utiliser WebRTC.");
     else if (!webRtc) {
       assert(signalling.includes("ready") && signalling.includes("answer"), "La signalisation HTTPS doit aboutir avant le secours.");
       console.log(name + " · " + JSON.stringify(await page.evaluate(() => window.rtcProbe)));
@@ -124,7 +125,7 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
           ["-c", checkZip, saved], {encoding:"utf8"}));
         assert.deepEqual(hashes, Object.fromEntries(Object.entries(expected).map(([filename, bytes]) => [filename, sha256(bytes).digest("hex")])));
       }
-      if (webRtc) await page.waitForFunction(() => document.getElementById("status")?.textContent === "Téléchargement WebRTC terminé.");
+      if (webRtc) await page.waitForFunction(() => document.getElementById("status")?.textContent === "Téléchargement terminé.");
     }
     const mode = webRtc ? "WebRTC direct avec les téléchargements HTTPS bloqués"
       : webRtcBlocked ? "HTTPS de secours avec WebRTC désactivé" : "Secours HTTPS après négociation WebRTC";

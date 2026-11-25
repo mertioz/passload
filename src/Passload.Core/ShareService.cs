@@ -1,19 +1,23 @@
+using Microsoft.AspNetCore.Connections;
+
 namespace Passload.Core;
 
-public sealed class ShareService : IAsyncDisposable
+public sealed class ShareService(DownloadHistory? history = null) : IAsyncDisposable
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
-    private readonly ShareCatalog _catalog = new();
+    private readonly ShareCatalog _catalog = new(history);
     private TransferServer? _server;
+    private int _preferredPort;
     private RouterLease? _lease;
     private bool _closed;
     public Share[] Active => _catalog.Active;
+    public int? LocalPort => _server?.Port;
 
     public Share? FindPublicWebRtc(string token) =>
         _catalog.Find(token) is { UsesPublicWebRtc: true } share ? share : null;
 
     public async Task<Share> CreateAsync(IEnumerable<string> paths, TimeSpan duration, ShareScope scope, int port,
-        string? manualAddress, CancellationToken cancellation = default, Func<CancellationToken, Task>? authorizeInbound = null,
+        string? manualAddress, CancellationToken cancellation = default, Func<int, CancellationToken, Task>? authorizeInbound = null,
         bool publicWebRtc = false)
     {
         var files = await Task.Run(() => SharedFile.Select(paths), cancellation).ConfigureAwait(false);
@@ -22,17 +26,15 @@ public sealed class ShareService : IAsyncDisposable
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
-            if (_server is not null && _server.Port != port) throw new InvalidOperationException("Arrêtez les partages actifs avant de changer de port.");
-            try
+            if (_server is not null && _preferredPort != port) throw new InvalidOperationException("Arrêtez les partages actifs avant de changer de port.");
+            if (_server is null)
             {
-                _server ??= await TransferServer.StartAsync(_catalog, port, network.Addresses, cancellation: cancellation).ConfigureAwait(false);
+                _server = await StartServerAsync(port, network, string.IsNullOrWhiteSpace(manualAddress), cancellation).ConfigureAwait(false);
+                _preferredPort = port;
             }
-            catch (IOException ex)
-            {
-                throw new IOException($"Le PC ne peut pas écouter sur le port TCP {port}. Choisissez un autre port dans Connexion.", ex);
-            }
-            var route = await RouteAsync(network, scope, port, manualAddress, cancellation).ConfigureAwait(false);
-            if (authorizeInbound is not null) await authorizeInbound(cancellation).ConfigureAwait(false);
+            var actualPort = _server.Port;
+            var route = await RouteAsync(network, scope, actualPort, manualAddress, cancellation).ConfigureAwait(false);
+            if (authorizeInbound is not null) await authorizeInbound(actualPort, cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
             return _catalog.Add(files, duration, scope, route.Origin, _server.Fingerprint, route.Label, route.Mapped, publicWebRtc: publicWebRtc);
         }
@@ -42,6 +44,25 @@ public sealed class ShareService : IAsyncDisposable
             throw;
         }
         finally { _gate.Release(); }
+    }
+
+    private async Task<TransferServer> StartServerAsync(int port, NetworkInfo network, bool mayChoosePort, CancellationToken cancellation)
+    {
+        try
+        {
+            try
+            {
+                return await TransferServer.StartAsync(_catalog, port, network.Addresses, cancellation: cancellation).ConfigureAwait(false);
+            }
+            catch (IOException ex) when (mayChoosePort && ex.InnerException is AddressInUseException)
+            {
+                return await TransferServer.StartAsync(_catalog, 0, network.Addresses, cancellation: cancellation).ConfigureAwait(false);
+            }
+        }
+        catch (IOException ex)
+        {
+            throw new IOException($"Le PC ne peut pas écouter sur le port TCP {port}. Choisissez un autre port dans Connexion.", ex);
+        }
     }
 
     private async Task<(Uri Origin, string Label, bool Mapped)> RouteAsync(NetworkInfo network, ShareScope scope, int port,

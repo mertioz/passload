@@ -26,10 +26,12 @@ try {
       await page.locator("#zip:visible").waitFor({timeout:65_000}).catch(async () => {
         throw new Error("Réception indisponible. " + await page.locator("#status").innerText());
       });
-      const mode = await page.locator("#status").innerText();
+      const mode = await page.locator("html").getAttribute("data-transfer");
+      assert.equal(await page.locator("header").count(), 0);
+      assert(await page.locator("#status").isHidden());
       console.log(name + (forced ? " · WebRTC bloqué · " : " · ") + mode);
-      if (forced) assert.match(mode,/relais chiffré/);
-      if (/directe/.test(mode)) await context.route("https://ppng.io/**", route => route.abort());
+      if (forced) assert.equal(mode,"relay");
+      if (mode === "webrtc") await context.route("https://ppng.io/**", route => route.abort());
       assert.equal(await page.locator("#list li").count(),files.size);
       for (const [file,expected] of [...files,["Passload.zip",null]]) {
         const label = expected === null ? "Tout télécharger en ZIP" : "Télécharger "+file;

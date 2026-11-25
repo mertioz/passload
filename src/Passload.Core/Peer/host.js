@@ -7,11 +7,12 @@ const notify = (op, token, detail = "") => window.chrome.webview.postMessage({op
 const MAX_BATCH = 512 * 1024;
 
 class Outgoing {
-  constructor(session, peerId) {
+  constructor(session, guest) {
     this.session = session;
+    this.guest = guest;
     this.jobs = Promise.resolve();
     this.queued = 0;
-    this.link = new Peer(session.socket, peerId, p => this.enqueue(p), () => this.close());
+    this.link = new Peer(session.socket, guest.peer, p => this.enqueue(p), () => this.close());
   }
   enqueue(packet) {
     if (packet[0] !== 0) return;
@@ -26,11 +27,21 @@ class Outgoing {
   }
   async handle(cmd) {
     if (!Number.isSafeInteger(cmd.id) || cmd.id < 1 || cmd.id > 0xffffffff || !this.session.live) return;
+    if (cmd.t === "received") {
+      if (this.completed?.id === cmd.id) {
+        const {file} = this.completed;
+        this.completed = null;
+        if (!this.guest.preview) await this.reportDownload(file);
+      }
+      return;
+    }
     if (cmd.t === "open") {
       this.stop();
+      this.completed = null;
       const path = cmd.item === "manifest" ? "manifest" : cmd.item === "zip" ? "all.zip" :
         Number.isSafeInteger(cmd.item) && cmd.item >= 0 ? "files/" + cmd.item : null;
       if (!path) throw new Error("Fichier invalide.");
+      this.file = cmd.item === "zip" ? -1 : cmd.item;
       this.id = cmd.id;
       this.abort = new AbortController();
       const response = await fetch("/s/" + this.session.options.token + "/" + path, {signal:this.abort.signal, cache:"no-store", redirect:"error"});
@@ -71,7 +82,25 @@ class Outgoing {
       for (const piece of buffered) { batch.set(piece,offset); offset += piece.length; }
       await this.link.send(batch);
     } else await this.link.send(control({t:"batch", id:cmd.id, done}));
-    if (done) this.stop();
+    if (done) {
+      if (Number.isInteger(this.file)) this.completed = {id:cmd.id, file:this.file};
+      this.stop();
+    }
+  }
+  async reportDownload(file) {
+    const relayed = this.link.transport === "relay";
+    let address = this.guest.address ?? null;
+    if (!relayed && !this.session.options.publicRtc && this.link.pc) {
+      // The selected candidate can disclose an address. A hidden or mDNS address stays unknown.
+      try {
+        const stats = await deadline(this.link.pc.getStats(), 700, "Adresse indisponible.");
+        const transport = [...stats.values()].find(entry => entry.type === "transport" && entry.selectedCandidatePairId);
+        const pair = transport && stats.get(transport.selectedCandidatePairId);
+        const remote = pair && stats.get(pair.remoteCandidateId);
+        address = remote?.address ?? null;
+      } catch {}
+    }
+    window.chrome.webview.postMessage({op:"download", token:this.session.options.token, file, address, relayed});
   }
   stop() {
     this.abort?.abort();
@@ -93,7 +122,7 @@ class Session {
         : (...callbacks) => Meeting.create(this.options, ...callbacks);
       socket = await create(msg => {
         if (msg.op === "joined") {
-          if (!this.peers.has(msg.peer)) this.peers.set(msg.peer, new Outgoing(this, msg.peer));
+          if (!this.peers.has(msg.peer)) this.peers.set(msg.peer, new Outgoing(this, msg));
         } else if (msg.op === "left") {
           this.peers.get(msg.peer)?.close(); this.peers.delete(msg.peer);
         }

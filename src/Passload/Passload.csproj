@@ -8,6 +8,7 @@
     <Description>Partage de fichiers temporaire entre ordinateurs.</Description>
   </PropertyGroup>
   <ItemGroup>
+    <FrameworkReference Include="Microsoft.WindowsDesktop.App.WindowsForms" />
     <ProjectReference Include="../Passload.Core/Passload.Core.csproj" />
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4314.35" />
     <Resource Include="Assets/Fonts/*.ttf" />

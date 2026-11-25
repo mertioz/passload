@@ -9,9 +9,9 @@ using Passload.Core;
 
 namespace Passload;
 
-internal sealed class InternetSharing(Grid container, ShareService publicShares) : IAsyncDisposable
+internal sealed class InternetSharing(Grid container, ShareService publicShares, DownloadHistory history) : IAsyncDisposable
 {
-    private readonly ShareCatalog _catalog = new();
+    private readonly ShareCatalog _catalog = new(history);
     private readonly Dictionary<string, TaskCompletionSource> _starting = new();
     private readonly HashSet<string> _offline = new();
     private readonly HashSet<string> _publicSessions = new();
@@ -117,8 +117,10 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares)
         var started = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         try
         {
-            var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload", "WebView");
-            var env = await CoreWebView2Environment.CreateAsync(null, profile);
+            var profile = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload", "WebViewHost");
+            // The transfer-only renderer stays responsive while the interface is hidden.
+            var options = new CoreWebView2EnvironmentOptions("--disable-background-timer-throttling --disable-renderer-backgrounding");
+            var env = await CoreWebView2Environment.CreateAsync(null, profile, options);
             await view.EnsureCoreWebView2Async(env);
             stop.ThrowIfCancellationRequested();
             var core = view.CoreWebView2;
@@ -142,6 +144,11 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares)
                     case "boot": started.TrySetResult(); break;
                     case "online": _offline.Remove(token); if (_starting.TryGetValue(token, out var begin)) begin.TrySetResult(); break;
                     case "offline": _offline.Add(token); break;
+                    case "download":
+                        var share = _catalog.Find(token) ?? publicShares.FindPublicWebRtc(token);
+                        if (share is not null && msg.TryGetProperty("file", out var file) && file.TryGetInt32(out var id))
+                            share.RecordWebRtcDownload(id, msg.GetProperty("address").GetString(), msg.GetProperty("relayed").GetBoolean());
+                        break;
                     case "failed":
                         if (_starting.TryGetValue(token, out var failure)) failure.TrySetException(new IOException(msg.GetProperty("detail").GetString()));
                         break;

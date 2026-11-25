@@ -7,7 +7,10 @@ const invite = location.hash.match(/^#p2\.([A-Za-z0-9_-]{87})\.([A-Za-z0-9_-]{43
 const roomId = invite?.[1], key = invite?.[2], until = Number(invite?.[3]);
 const offline = "Le partage est arrêté, le lien a expiré ou le PC expéditeur est hors ligne.";
 let current, busy = false, archiveEstimate = 0;
-const show = text => { el("status").textContent = text; };
+const show = text => {
+  el("status").textContent = text;
+  el("status").hidden = !text;
+};
 const formatSize = n => {
   if (!n) return "0 o";
   const i = Math.min(5, Math.floor(Math.log(n) / Math.log(1024)));
@@ -25,6 +28,7 @@ async function download(file) {
     const destination = await chooseDestination(name, file?.size ?? archiveEstimate);
     source = await current.open(file ? file.id : "zip");
     await saveRemote(source, name, file?.size ?? null, file ? "application/octet-stream" : "application/zip", bytes => show("Téléchargement · " + formatSize(bytes)), destination);
+    await source.confirm?.();
     show("Téléchargement terminé.");
   } catch (err) { show(err.name === "AbortError" ? "Téléchargement annulé." : err.message); }
   finally { await source?.cancel(); busy = false; if (current && !current.closed) enableButtons(true); }
@@ -33,17 +37,24 @@ async function connect(forceRelay = false) {
   if (!roomId || !key) { show("Ouvrez le lien complet envoyé par l’expéditeur."); return; }
   if (until <= Date.now()) { show("Ce lien a expiré."); return; }
   current?.drop(); el("retry").hidden = true; el("files").hidden = true;
+  delete document.documentElement.dataset.transfer;
   show("Connexion à l’expéditeur…");
   const client = new Incoming((...callbacks) => Meeting.create({room:roomId, key}, ...callbacks), () => {
     if (client === current) { show(offline); enableButtons(false); el("retry").hidden = false; }
-  }, show);
+  });
   current = client;
   try {
     const mode = await client.connect(forceRelay);
     const manifest = await client.manifest();
     if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.some((f,i) =>
       f.id !== i || typeof f.name !== "string" || !Number.isSafeInteger(f.size) || f.size < 0)) throw new Error("Liste de fichiers invalide.");
-    el("title").textContent = manifest.files.length === 1 ? "Un fichier partagé" : manifest.files.length + " fichiers partagés";
+    const title = manifest.name || (manifest.files.length === 1 ? "Un fichier partagé" : manifest.files.length + " fichiers partagés");
+    el("title").textContent = document.title = title;
+    const description = el("description");
+    if (description) {
+      description.textContent = manifest.description ?? "";
+      description.hidden = !manifest.description;
+    }
     archiveEstimate = manifest.files.reduce((total,file)=>total + file.size + 256, 0);
     el("list").replaceChildren();
     for (const file of manifest.files) {
@@ -57,7 +68,8 @@ async function connect(forceRelay = false) {
     el("zip").hidden = manifest.files.length < 2;
     el("expiry").textContent = "Expire le " + new Date(manifest.expiresAt).toLocaleString("fr-FR");
     el("files").hidden = false; enableButtons(true);
-    show(mode === "direct" ? "Connexion directe avec l’expéditeur." : "Connexion par relais chiffré.");
+    document.documentElement.dataset.transfer = mode === "direct" ? "webrtc" : "relay";
+    show("");
   } catch (err) {
     client.drop();
     if (client.mode === "direct" && client.canRelay && !forceRelay) { await connect(true); return; }

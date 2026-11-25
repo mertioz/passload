@@ -54,7 +54,7 @@ public sealed class TransferServer : IAsyncDisposable
         var app = builder.Build();
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
         Share? Resolve(string token) => catalog.Find(token) ?? publicShares?.Invoke(token);
-        app.Run(ctx => browserEngine ? ServeEngine(ctx, Resolve) : ServeAsync(ctx, catalog.Find));
+        app.Run(ctx => browserEngine ? ServeEngine(ctx, Resolve) : ServeAsync(ctx, catalog.Find, trackDownload: true));
         try
         {
             await app.StartAsync(cancellation).ConfigureAwait(false);
@@ -101,7 +101,7 @@ public sealed class TransferServer : IAsyncDisposable
         };
         if (path != "/engine/host" && asset is null)
         {
-            await ServeAsync(ctx, resolve);
+            await ServeAsync(ctx, resolve, trackDownload: false);
             return;
         }
         ctx.Response.Headers.CacheControl = "no-store";
@@ -124,7 +124,7 @@ public sealed class TransferServer : IAsyncDisposable
         await resource.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
     }
 
-    private static async Task ServeAsync(HttpContext ctx, Func<string, Share?> resolve)
+    private static async Task ServeAsync(HttpContext ctx, Func<string, Share?> resolve, bool trackDownload)
     {
         var response = ctx.Response;
         response.Headers.CacheControl = "no-store";
@@ -180,12 +180,17 @@ public sealed class TransferServer : IAsyncDisposable
             if (parts.Length == 4 && parts[3] == "manifest")
             {
                 response.ContentType = "application/json; charset=utf-8";
-                if (!head) await response.WriteAsJsonAsync(new Manifest(share.ExpiresAt, share.Files.Select(f => new FileItem(f.Id, f.Name, f.Size)).ToArray()), cancellationToken: ctx.RequestAborted);
+                var details = share.Details;
+                if (!head)
+                    await response.WriteAsJsonAsync(new Manifest(share.ExpiresAt,
+                        share.Files.Select(f => new FileItem(f.Id, f.Name, f.Size)).ToArray(), details.Title, details.Description),
+                        cancellationToken: ctx.RequestAborted);
                 return;
             }
             if (parts.Length == 4 && parts[3] == "all.zip")
             {
                 await SendZip(ctx, share, head);
+                if (trackDownload && !head) await RecordHttpsCompletion(ctx, share, -1);
                 return;
             }
             if (parts.Length == 5 && parts[3] == "files" &&
@@ -195,6 +200,7 @@ public sealed class TransferServer : IAsyncDisposable
                 await using var stream = file.Open();
                 await Results.File(stream, "application/octet-stream", file.Name,
                     new DateTimeOffset(file.ModifiedUtc), enableRangeProcessing: true).ExecuteAsync(ctx);
+                if (trackDownload && !head) await RecordHttpsCompletion(ctx, share, id);
                 return;
             }
             await Unavailable(ctx);
@@ -210,6 +216,18 @@ public sealed class TransferServer : IAsyncDisposable
                 await Html(ctx, 409, ErrorPage("Fichier indisponible", "Un fichier a été déplacé, modifié ou verrouillé. Demandez un nouveau lien à l’expéditeur."));
             }
         }
+    }
+
+    private static async Task RecordHttpsCompletion(HttpContext ctx, Share share, int file)
+    {
+        var status = ctx.Response.StatusCode;
+        if (status is not (StatusCodes.Status200OK or StatusCodes.Status206PartialContent) ||
+            ctx.RequestAborted.IsCancellationRequested) return;
+        var range = ctx.Response.GetTypedHeaders().ContentRange;
+        if (status == StatusCodes.Status206PartialContent && (range?.From is null || range.To is null)) return;
+        await ctx.Response.CompleteAsync();
+        if (!ctx.RequestAborted.IsCancellationRequested)
+            share.RecordHttpsDownload(file, ctx.Connection.RemoteIpAddress, range?.From, range?.To);
     }
 
     private static async Task SendZip(HttpContext ctx, Share share, bool head)
@@ -258,18 +276,24 @@ public sealed class TransferServer : IAsyncDisposable
             items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {name}'{rtc}>Télécharger</a></li>");
         }
         var single = share.Files.Count == 1;
-        var title = single ? "Un fichier partagé" : $"{share.Files.Count} fichiers partagés";
+        var details = share.Details;
+        var title = details.Title ?? (single ? "Un fichier partagé" : $"{share.Files.Count} fichiers partagés");
+        var volume = details.Title is null ? Display.Size(share.TotalSize) : $"{Display.Count(share.Files.Count)} · {Display.Size(share.TotalSize)}";
+        var description = details.Description is null ? "" : $"<p class='description'>{WebUtility.HtmlEncode(details.Description)}</p>";
         var expiry = share.ExpiresAt.UtcDateTime.ToString("dd MMM yyyy 'à' HH:mm 'UTC'", CultureInfo.GetCultureInfo("fr-FR"));
         var zipRtc = share.UsesPublicWebRtc ? $" data-item='zip' data-size='{share.TotalSize}' data-name='Passload.zip'" : "";
         var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'{zipRtc}>Tout télécharger en ZIP</a>";
-        var status = share.UsesPublicWebRtc ? "<p id='status' role='status'>Téléchargement HTTPS disponible.</p><a id='saved' class='note' hidden></a>" : "";
+        var status = share.UsesPublicWebRtc ? "<p id='status' role='status' hidden></p><a id='saved' class='note' hidden></a>" : "";
         var script = share.UsesPublicWebRtc ? $"<script type='module' src='{basePath}/assets/public-receive.js'></script>" : "";
-        var body = $"<h1>{title}</h1><p>{Display.Size(share.TotalSize)}</p>{status}<ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p>{script}";
-        return Template.Replace("<!--content-->", body);
+        var body = $"<h1>{WebUtility.HtmlEncode(title)}</h1><p>{volume}</p>{description}{status}<ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p><p class='note'>L’expéditeur peut consulter les transferts terminés, leur heure et l’adresse IP observée.</p>{script}";
+        return Page(title, body);
     }
 
     private static string ErrorPage(string title, string message) =>
-        Template.Replace("<!--content-->", $"<h1>{title}</h1><p class='intro'>{message}</p>");
+        Page(title, $"<h1>{title}</h1><p class='intro'>{message}</p>");
+
+    private static string Page(string title, string body) =>
+        Template.Replace("<!--page-title-->", WebUtility.HtmlEncode(title)).Replace("<!--content-->", body);
 
     private static string LoadTemplate()
     {

@@ -1,6 +1,7 @@
 using System.IO.Compression;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Sockets;
 using System.Net.WebSockets;
 using System.Security.Cryptography;
 using System.Text;
@@ -68,6 +69,19 @@ try
     var page = await http.GetStringAsync(address);
     Check(page.Contains("Tout télécharger en ZIP") && WebUtility.HtmlDecode(page).Contains("été & lumière.txt"), "page web et noms accentués");
     Check(!page.Contains(folder.FullName, StringComparison.OrdinalIgnoreCase) && !page.Contains(share.Link.Fragment), "chemins locaux et empreinte absents de la page");
+    share.UpdateDetails("Une sélection <privée>", "Une description <script>\nDeuxième ligne.");
+    var decorated = await http.GetStringAsync(address);
+    Check(share.Link.GetLeftPart(UriPartial.Path) == address && WebUtility.HtmlDecode(decorated).Contains("<title>Une sélection <privée></title>"),
+        "l’adresse de partage fonctionne après le renommage");
+    Check(!decorated.Contains("<header>") && !decorated.Contains("<script>") &&
+        WebUtility.HtmlDecode(decorated).Contains("Une description <script>\nDeuxième ligne."),
+        "page sans bandeau et description échappée");
+    using (var metadata = new ReceiveClient(share.Link.AbsoluteUri))
+    {
+        var details = await metadata.InspectAsync(default);
+        Check(details.Name == "Une sélection <privée>" && details.Description == "Une description <script>\nDeuxième ligne.",
+            "titre et description visibles dans le manifeste de réception");
+    }
     using var head = await http.SendAsync(new HttpRequestMessage(HttpMethod.Head, address + "/files/0"));
     Check(head.StatusCode == HttpStatusCode.OK && head.Content.Headers.ContentLength == files[0].Size && (await head.Content.ReadAsByteArrayAsync()).Length == 0, "métadonnées HEAD et taille exacte");
     Check(head.Content.Headers.ContentDisposition?.DispositionType == "attachment" && head.Content.Headers.ContentDisposition.FileNameStar == files[0].Name, "pièce jointe avec nom Unicode");
@@ -175,7 +189,8 @@ try
         var preview = privateCatalog.Add(SharedFile.Select([file]),TimeSpan.FromMinutes(1),ShareScope.Internet,localOrigin,"","Internet",publicLink:new Uri("https://passload.example/#test"));
         using var browser = new HttpClient {BaseAddress=localOrigin};
         var localBase = $"/s/{preview.Token}";
-        Check((await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"), "aperçu sur le PC expéditeur sans rebouclage de la box");
+        Check(WebUtility.HtmlDecode(await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"),
+            "aperçu sur le PC expéditeur sans rebouclage de la box");
         Check((await browser.GetStringAsync(localBase+"/files/0")) == await File.ReadAllTextAsync(file), "fichier accessible par l’aperçu local");
         foreach (var asset in new[]{"","receive.js","incoming.js","wire.js","pipe.js","save.js","disk.js","style.css"})
             Check((await browser.GetAsync("/recevoir/"+asset)).IsSuccessStatusCode, "lecteur intégré disponible · "+(asset==""?"page":asset));
@@ -226,17 +241,24 @@ try
         catalog.Revoke(rtc.Token);
         Check((await http.GetAsync(rtcBase+"/assets/wire.js")).StatusCode == HttpStatusCode.NotFound, "signalisation et ressources révoquées avec le partage");
     }
+    await DownloadHistoryCheck.RunAsync(folder.FullName, file, empty, Check, args.Contains("--network"));
     if (args.Contains("--network"))
     {
+        using var reservation = new Socket(AddressFamily.InterNetworkV6, SocketType.Stream, ProtocolType.Tcp) { DualMode = true };
+        reservation.Bind(new IPEndPoint(IPAddress.IPv6Any, 0));
+        reservation.Listen(1);
+        var port = ((IPEndPoint)reservation.LocalEndPoint!).Port;
         await using var service = new ShareService();
-        var local = await service.CreateAsync([file], TimeSpan.FromMinutes(1), ShareScope.Local, NetworkInfo.DefaultPort, null);
+        var local = await service.CreateAsync([file], TimeSpan.FromMinutes(1), ShareScope.Local, port, null);
+        Check(service.LocalPort == local.Link.Port && local.Link.Port != port, "port disponible choisi quand le port préféré est occupé");
+        reservation.Dispose();
         using var localClient = new ReceiveClient(local.Link.AbsoluteUri);
         Check((await localClient.InspectAsync(default)).Files.Length == 1, "adresse de l’interface réseau réellement accessible depuis ce PC");
         await service.RevokeAsync(local.Token);
         await Throws<HttpRequestException>(() => localClient.InspectAsync(default), "arrêt du serveur après le dernier lien");
         try
         {
-            var internet = await service.CreateAsync([empty], TimeSpan.FromMinutes(1), ShareScope.Internet, NetworkInfo.DefaultPort, null);
+            var internet = await service.CreateAsync([empty], TimeSpan.FromMinutes(1), ShareScope.Internet, port, null);
             Console.WriteLine("Route Internet détectée sur ce PC : " + internet.RouteLabel);
             Check(internet.Scope == ShareScope.Internet && internet.Link.Scheme == "https", "construction du lien Internet sur le réseau réel");
             await service.RevokeAsync(internet.Token);

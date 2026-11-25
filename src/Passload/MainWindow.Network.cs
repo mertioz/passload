@@ -48,7 +48,7 @@ public partial class MainWindow
         try
         {
             var info = NetworkInfo.Read();
-            LocalAddressText.Text = info.LanAddress is { } lan ? $"Destination de la redirection     {lan}  ·  TCP {_settings.Port}" : "Adresse locale indisponible.";
+            LocalAddressText.Text = info.LanAddress is { } lan ? $"Destination de la redirection     {lan}  ·  TCP {_sharing.LocalPort ?? _settings.Port}" : "Adresse locale indisponible.";
             IPv6Text.Text = info.PublicV6 is null ? "IPv6 publique non détectée sur ce PC." : $"IPv6 publique détectée     {info.PublicV6}";
             var gateway = info.Gateways.FirstOrDefault(g => g.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(g));
             _routerPage = gateway is null ? null : new UriBuilder("http", gateway.ToString()).Uri;
@@ -97,8 +97,9 @@ public partial class MainWindow
         {
             var next = ReadSettings();
             if (next != _settings) throw new InvalidOperationException("Enregistrez les réglages avant d’autoriser le port dans Windows.");
-            await Firewall.RequestAsync(next.Port);
-            Notice($"Windows autorise Passload à recevoir des connexions sur le port TCP {next.Port}.");
+            var port = _sharing.LocalPort ?? next.Port;
+            await Firewall.RequestAsync(port);
+            Notice($"Windows autorise Passload à recevoir des connexions sur le port TCP {port}.");
         }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { Notice("Demande de pare-feu annulée."); }
         catch (Exception ex) { Notice(Friendly(ex), true); }

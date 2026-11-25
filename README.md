@@ -10,9 +10,21 @@ Partagez un ou plusieurs fichiers depuis un PC Windows avec un lien temporaire. 
 
 1. Lancez `Passload.exe`. Déposez les fichiers dans la fenêtre ou choisissez **Parcourir les fichiers**.
 2. Choisissez la durée et cliquez sur **Créer le lien**. Le type proposé est **WebRTC · IP publique**. Envoyez l’adresse complète à votre destinataire.
-3. Gardez Passload ouvert, le PC éveillé et les fichiers à leur emplacement jusqu’à la fin du téléchargement.
+3. Gardez le PC allumé et connecté, et les fichiers à leur emplacement. Vous pouvez fermer la fenêtre de Passload.
 
-**Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration ou la fermeture de Passload met également fin au partage.
+**Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Modifier le lien** permet de changer le titre et la description que le destinataire voit sur la page. L’adresse reste utilisable. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration met aussi fin au partage.
+
+### Partager en arrière-plan
+
+Fermer la fenêtre range Passload près de l’horloge tant qu’un partage ou un transfert est en cours. Chaque lien garde sa propre expiration. Quand le dernier lien et le dernier transfert sont terminés, Passload se ferme automatiquement si la fenêtre est masquée. Double-cliquez sur l’icône ou relancez l’exécutable pour retrouver la même session. **Quitter Passload**, dans le menu de l’icône, arrête tous les liens.
+
+Passload empêche la veille automatique de Windows pendant un partage actif. Une mise en veille volontaire ou une coupure du réseau interrompt l’accès pendant cette période. Les liens cessent de fonctionner lorsque le PC s’éteint. Si le port préféré est occupé, un partage automatique peut utiliser un autre port libre.
+
+### Suivre les téléchargements
+
+Dans **Liens**, chaque partage affiche ses transferts terminés et le nombre d’IP distinctes observées. Le détail contient le fichier ou le ZIP, la date, l’adresse IP visible et le mode de transfert. **Historique** permet de retrouver les téléchargements après fermeture ou expiration.
+
+Une IP peut être partagée par plusieurs personnes ou changer. Le relais peut masquer l’adresse du destinataire. Les pages ouvertes, les aperçus locaux et les transferts incomplets ne sont pas comptabilisés. Le journal reste sur le PC dans `%LOCALAPPDATA%\Passload\download-history.jsonl` et garde les 5 000 derniers transferts des 30 derniers jours.
 
 ## Recevoir
 

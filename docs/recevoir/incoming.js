@@ -90,14 +90,22 @@ export class Incoming {
       await this.peer.send(control({t:"open", id:req.id, item}));
       await deadline(req.started.promise, 30_000, offline);
     } catch (e) { await cancel(); throw e; }
-    return {cancel, next:async () => {
+    const confirm = async () => {
+      if (!req.complete || req.confirmed || item === "manifest" || this.closed) return;
+      req.confirmed = true;
+      await deadline(this.peer.send(control({t:"received", id:req.id})), 2500, "Confirmation indisponible.").catch(() => {});
+    };
+    return {cancel, confirm, next:async () => {
       if (this.closed || this.request !== req) throw new Error(offline);
       req.parts = []; req.length = 0; req.batch = deferred();
       req.batch.promise.catch(() => {});
       await this.peer.send(control({t:"pull", id:req.id}));
       const result = await deadline(req.batch.promise, 90_000, "Le transfert a été interrompu.");
       req.parts = []; req.batch = null;
-      if (result.done) this.request = null;
+      if (result.done) {
+        req.complete = true;
+        this.request = null;
+      }
       return result;
     }};
   }

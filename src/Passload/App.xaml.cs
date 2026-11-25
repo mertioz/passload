@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.Security.Principal;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
@@ -9,6 +10,11 @@ namespace Passload;
 
 public partial class App : Application
 {
+    private Mutex? _instance;
+    private EventWaitHandle? _showWindow;
+    private RegisteredWaitHandle? _activation;
+    private bool _owner;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -19,7 +25,39 @@ public partial class App : Application
             Shutdown(Firewall.Authorize(port));
             return;
         }
-        new MainWindow().Show();
+        using var identity = WindowsIdentity.GetCurrent();
+        var scope = @"Local\Passload-" + (identity.User?.Value ?? Environment.UserName);
+        _showWindow = new EventWaitHandle(false, EventResetMode.AutoReset, scope + "-show");
+        _instance = new Mutex(false, scope + "-instance");
+        try { _owner = _instance.WaitOne(0); }
+        catch (AbandonedMutexException) { _owner = true; }
+        if (!_owner)
+        {
+            _showWindow.Set();
+            Shutdown();
+            return;
+        }
+
+        var window = new MainWindow();
+        MainWindow = window;
+        _activation = ThreadPool.RegisterWaitForSingleObject(_showWindow,
+            (_, _) => Dispatcher.BeginInvoke(new Action(window.Reopen)), null, Timeout.Infinite, false);
+        window.Show();
+    }
+
+    protected override void OnSessionEnding(SessionEndingCancelEventArgs e)
+    {
+        base.OnSessionEnding(e);
+        if (!e.Cancel && MainWindow is MainWindow window) window.PrepareForSystemExit();
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _activation?.Unregister(null);
+        _showWindow?.Dispose();
+        if (_owner) _instance?.ReleaseMutex();
+        _instance?.Dispose();
+        base.OnExit(e);
     }
 }
 

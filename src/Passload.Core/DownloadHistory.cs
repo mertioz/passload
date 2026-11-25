@@ -1,0 +1,135 @@
+using System.Net;
+using System.Text.Json;
+
+namespace Passload.Core;
+
+public enum DownloadTransport { Https, WebRtc, EncryptedRelay }
+
+public sealed record DownloadRecord(Guid ShareId, string ShareName, string FileName, DateTimeOffset At,
+    string? Address, DownloadTransport Transport);
+
+public sealed class DownloadHistory
+{
+    private static readonly TimeSpan Retention = TimeSpan.FromDays(30);
+    private const int Limit = 5000;
+    private const int RewriteInterval = 100;
+    private readonly object _lock = new();
+    private readonly List<DownloadRecord> _records = [];
+    private readonly string? _path;
+    private bool _needsRewrite;
+    private int _writesSinceRewrite = RewriteInterval;
+    private long _revision;
+    public long Revision => Interlocked.Read(ref _revision);
+    public bool PersistenceUnavailable { get; private set; }
+
+    public DownloadHistory(string? path = null)
+    {
+        _path = path is null ? null : Path.GetFullPath(path);
+        if (_path is null || !File.Exists(_path)) return;
+        try
+        {
+            var cutoff = DateTimeOffset.UtcNow - Retention;
+            foreach (var line in File.ReadLines(_path))
+            {
+                if (string.IsNullOrWhiteSpace(line)) continue;
+                try
+                {
+                    var entry = JsonSerializer.Deserialize<DownloadRecord>(line);
+                    if (entry is not null && entry.At >= cutoff && !string.IsNullOrWhiteSpace(entry.FileName))
+                        _records.Add(entry);
+                    else _needsRewrite = true;
+                }
+                catch (JsonException) { _needsRewrite = true; }
+                if (_records.Count > Limit)
+                {
+                    _records.RemoveAt(0);
+                    _needsRewrite = true;
+                }
+            }
+            if (_needsRewrite) Rewrite();
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceUnavailable = true; }
+    }
+
+    public DownloadRecord[] Recent()
+    {
+        var cutoff = DateTimeOffset.UtcNow - Retention;
+        lock (_lock) return _records.Where(item => item.At >= cutoff).Reverse().ToArray();
+    }
+
+    internal void Record(DownloadRecord entry)
+    {
+        lock (_lock)
+        {
+            _records.Add(entry);
+            if (_records.Count > Limit)
+            {
+                _records.RemoveAt(0);
+                _needsRewrite = true;
+            }
+            if (_records[0].At < entry.At - Retention)
+            {
+                _records.RemoveAll(item => item.At < entry.At - Retention);
+                _needsRewrite = true;
+            }
+
+            if (_path is not null)
+            {
+                try
+                {
+                    Directory.CreateDirectory(Path.GetDirectoryName(_path)!);
+                    if (PersistenceUnavailable || _needsRewrite && _writesSinceRewrite >= RewriteInterval) Rewrite();
+                    else
+                    {
+                        // A newline also separates the next record after a partial write.
+                        File.AppendAllText(_path, "\n" + JsonSerializer.Serialize(entry) + "\n");
+                        _writesSinceRewrite = Math.Min(_writesSinceRewrite + 1, RewriteInterval);
+                    }
+                    PersistenceUnavailable = false;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceUnavailable = true; }
+            }
+            Interlocked.Increment(ref _revision);
+        }
+    }
+
+    internal void RenameShare(Guid id, string name)
+    {
+        lock (_lock)
+        {
+            var found = false;
+            for (var i = 0; i < _records.Count; i++)
+            {
+                if (_records[i].ShareId != id) continue;
+                _records[i] = _records[i] with { ShareName = name };
+                found = true;
+            }
+            if (!found) return;
+            if (_path is not null)
+            {
+                try { Rewrite(); PersistenceUnavailable = false; }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceUnavailable = true; }
+            }
+            Interlocked.Increment(ref _revision);
+        }
+    }
+
+    private void Rewrite()
+    {
+        var temporary = _path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllLines(temporary, _records.Select(item => JsonSerializer.Serialize(item)));
+            File.Move(temporary, _path!, true);
+            _needsRewrite = false;
+            _writesSinceRewrite = 0;
+        }
+        finally { File.Delete(temporary); }
+    }
+}
+
+internal static class DownloadAddress
+{
+    public static IPAddress? Normalize(IPAddress? address) =>
+        address?.IsIPv4MappedToIPv6 == true ? address.MapToIPv4() : address;
+}

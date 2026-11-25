@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Globalization;
+using System.Net;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
 
@@ -46,12 +47,23 @@ public sealed record SharedFile(int Id, string Path, string Name, string ZipName
 }
 
 public sealed record FileItem(int Id, string Name, long Size);
-public sealed record Manifest(DateTimeOffset ExpiresAt, FileItem[] Files);
+public sealed record Manifest(DateTimeOffset ExpiresAt, FileItem[] Files, string? Name = null, string? Description = null);
+public sealed record ShareDetails(string? Title, string? Description);
 
 public sealed class Share
 {
     private readonly CancellationTokenSource _end = new();
+    private readonly DownloadHistory _history;
+    private readonly DownloadRanges _ranges = new();
+    private readonly object _detailsLock = new();
+    private ShareDetails _details = new(null, null);
+    public const int MaxTitleLength = 120;
+    public const int MaxDescriptionLength = 1200;
     public CancellationToken Ended { get; }
+    public Guid HistoryId { get; } = Guid.NewGuid();
+    public ShareDetails Details => Volatile.Read(ref _details);
+    public string DefaultName => Files.Count == 1 ? Files[0].Name : $"{Files[0].Name} +{Files.Count - 1}";
+    public string Name => Details.Title ?? DefaultName;
     public string Token { get; } = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
     public IReadOnlyList<SharedFile> Files { get; }
     public DateTimeOffset ExpiresAt { get; }
@@ -65,11 +77,12 @@ public sealed class Share
     public long TotalSize { get; }
 
     internal Share(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc, DownloadHistory history)
     {
         if (files.Count == 0 || duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(7))
             throw new ArgumentOutOfRangeException(nameof(duration));
         Files = files;
+        _history = history;
         TotalSize = files.Sum(f => f.Size);
         ExpiresAt = DateTimeOffset.UtcNow.Add(duration);
         Ended = _end.Token;
@@ -81,6 +94,60 @@ public sealed class Share
         Link = publicLink ?? new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
     }
 
+    public void UpdateDetails(string? title, string? description)
+    {
+        title = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
+        description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
+        if (title is not null && (title.Length > MaxTitleLength || title.Any(char.IsControl)))
+            throw new ArgumentException($"Le nom doit tenir sur une ligne de {MaxTitleLength} caractères maximum.");
+        if (description is not null && (description.Length > MaxDescriptionLength ||
+            description.Any(c => char.IsControl(c) && c is not ('\t' or '\r' or '\n'))))
+            throw new ArgumentException($"La description doit contenir au maximum {MaxDescriptionLength} caractères.");
+
+        lock (_detailsLock)
+        {
+            var changedTitle = _details.Title != title;
+            Volatile.Write(ref _details, new ShareDetails(title, description));
+            if (changedTitle) _history.RenameShare(HistoryId, title ?? DefaultName);
+        }
+    }
+
+    internal void RecordHttpsDownload(int file, IPAddress? remote, long? from = null, long? to = null)
+    {
+        var address = DownloadAddress.Normalize(remote);
+        if (address is not null && IPAddress.IsLoopback(address)) return;
+        var now = DateTimeOffset.UtcNow;
+        var identity = address?.ToString();
+        if (file >= 0 && from is long start && to is long last)
+        {
+            var length = Files[file].Size;
+            if (start < 0 || last < start || last >= length) return;
+            if (start != 0 || last + 1 != length)
+            {
+                if (identity is not null && _ranges.IsComplete(identity, file, start, last + 1, length, now))
+                    RecordDownload(file, identity, DownloadTransport.Https, now);
+                return;
+            }
+        }
+        if (file >= 0 && identity is not null) _ranges.Clear(identity, file);
+        RecordDownload(file, identity, DownloadTransport.Https, now);
+    }
+
+    public void RecordWebRtcDownload(int file, string? address, bool relayed)
+    {
+        var ip = IPAddress.TryParse(address, out var parsed) ? DownloadAddress.Normalize(parsed) : null;
+        if (ip is not null && IPAddress.IsLoopback(ip)) return;
+        RecordDownload(file, ip?.ToString(), relayed ? DownloadTransport.EncryptedRelay : DownloadTransport.WebRtc,
+            DateTimeOffset.UtcNow);
+    }
+
+    private void RecordDownload(int file, string? address, DownloadTransport transport, DateTimeOffset now)
+    {
+        if (file < -1 || file >= Files.Count) return;
+        var name = file == -1 ? "Passload.zip" : Files[file].Name;
+        lock (_detailsLock) _history.Record(new DownloadRecord(HistoryId, Name, name, now, address, transport));
+    }
+
     internal void End()
     {
         _end.Cancel();
@@ -88,21 +155,22 @@ public sealed class Share
     }
 }
 
-public sealed class ShareCatalog
+public sealed class ShareCatalog(DownloadHistory? history = null)
 {
     private readonly ConcurrentDictionary<string, Share> _shares = new(StringComparer.Ordinal);
+    public DownloadHistory History { get; } = history ?? new DownloadHistory();
     public Share[] Active => _shares.Values.Where(s => s.Active).OrderBy(s => s.ExpiresAt).ToArray();
 
     public Share Add(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
         Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null, bool publicWebRtc = false)
     {
-        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc);
+        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc, History);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();
         throw new InvalidOperationException("Impossible de générer un lien unique.");
     }
 
-    internal Share? Find(string token) =>
+    public Share? Find(string token) =>
         _shares.TryGetValue(token, out var share) && share.Active ? share : null;
 
     public void Revoke(string token)

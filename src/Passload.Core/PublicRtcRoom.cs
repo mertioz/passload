@@ -1,3 +1,4 @@
+using System.Net;
 using System.Net.WebSockets;
 using System.Text.Json;
 using System.Threading.Channels;
@@ -44,6 +45,8 @@ internal sealed class PublicRtcRoom
         if (!CanUpgrade(context)) return;
         var guest = new Connection();
         var peer = Guid.NewGuid().ToString("N");
+        var address = DownloadAddress.Normalize(context.Connection.RemoteIpAddress);
+        var preview = address is not null && IPAddress.IsLoopback(address);
         Connection host;
         lock (_gate)
         {
@@ -58,7 +61,7 @@ internal sealed class PublicRtcRoom
                 return;
             }
             host = connected;
-            if (!host.Post(new { op = "joined", peer }))
+            if (!host.Post(new { op = "joined", peer, address = address?.ToString(), preview }))
             {
                 context.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
                 return;

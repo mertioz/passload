@@ -14,8 +14,10 @@ namespace Passload;
 
 public partial class MainWindow : Window
 {
-    private readonly ShareService _sharing = new();
+    private readonly DownloadHistory _history;
+    private readonly ShareService _sharing;
     private readonly InternetSharing _internet;
+    private readonly ShareTray _tray;
     private Task<Share>? _createTask;
     private readonly Dictionary<string, FileInfo> _draft = new(StringComparer.OrdinalIgnoreCase);
     private readonly DispatcherTimer _timer = new() { Interval = TimeSpan.FromSeconds(2) };
@@ -26,10 +28,16 @@ public partial class MainWindow : Window
     private static readonly System.Windows.Media.Brush Good = new SolidColorBrush(Color.FromRgb(241, 243, 240));
     private static readonly System.Windows.Media.Brush Alert = new SolidColorBrush(Color.FromRgb(253, 241, 229));
 
-    public MainWindow()
+    public MainWindow() : this(new DownloadHistory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Passload", "download-history.jsonl"))) { }
+
+    internal MainWindow(DownloadHistory history)
     {
+        _history = history;
+        _sharing = new ShareService(history);
         InitializeComponent();
-        _internet = new InternetSharing(Surface, _sharing);
+        _internet = new InternetSharing(Surface, _sharing, history);
+        _tray = new ShareTray(Reopen, ExitFromTray);
         SendNav.IsChecked = true;
         PortInput.Text = _settings.Port.ToString();
         ManualInput.Text = _settings.Manual;
@@ -171,7 +179,7 @@ public partial class MainWindow : Window
     {
         var port = _settings.Port;
         var share = await _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
-            scope == ShareScope.Internet ? token => Firewall.EnsureInboundAsync(port, token) : null,
+            scope == ShareScope.Internet ? Firewall.EnsureInboundAsync : null,
             publicWebRtc: publicRtc);
         if (publicRtc) await _internet.PreparePublicAsync(share, _lifetime.Token);
         return share;
@@ -180,11 +188,17 @@ public partial class MainWindow : Window
     private void RefreshLinks()
     {
         var active = _sharing.Active.Where(s => !_internet.IsStarting(s.Token)).Concat(_internet.Active).OrderBy(s => s.ExpiresAt).ToArray();
+        _tray.Update(!IsVisible, active.Length, _creating || _receiveTask is not null);
         var key = string.Join('/', active.Select(s => s.Token + (_internet.IsOffline(s.Token) ? "-" : "+")));
-        if (key == _lastLinks) return;
+        if (key == _lastLinks)
+        {
+            RefreshDownloadCounters();
+            return;
+        }
         _lastLinks = key;
         NavCount.Text = active.Length == 0 ? "" : $"  {active.Length}";
         LinkCards.Children.Clear();
+        _downloadCounters.Clear();
         if (active.Length == 0)
         {
             var empty = new StackPanel { Margin = new Thickness(4, 9, 4, 9) };
@@ -195,17 +209,21 @@ public partial class MainWindow : Window
             LinkCards.Children.Add(Card(empty));
         }
         foreach (var share in active) LinkCards.Children.Add(ShareCard(share));
+        RefreshDownloadCounters(force: true);
     }
 
     private Border ShareCard(Share share)
     {
         var box = new StackPanel();
-        var title = share.Files[0].Name + (share.Files.Count > 1 ? $"  +{share.Files.Count - 1}" : "");
+        var title = share.Name;
         box.Children.Add(new TextBlock { Text = title, TextTrimming = TextTrimming.CharacterEllipsis, ToolTip = string.Join("\n", share.Files.Select(f => f.Name)), Style = (Style)FindResource("SectionTitle") });
         var until = share.ExpiresAt.LocalDateTime.ToString("dd MMM à HH:mm");
         var route = _internet.IsOffline(share.Token) ? "Reconnexion en cours…" : share.RouteLabel;
         if (share.UsesPublicWebRtc) route = _internet.IsOffline(share.Token) ? "Secours HTTPS" : $"WebRTC · {share.RouteLabel}";
         box.Children.Add(new TextBlock { Text = $"{Display.Count(share.Files.Count)} · {Display.Size(share.TotalSize)} · {route} · Expire le {until}", Style = (Style)FindResource("Hint"), Margin = new Thickness(0, 4, 0, 10) });
+        if (share.Details.Description is { } description)
+            box.Children.Add(new TextBlock { Text = description, ToolTip = description, TextTrimming = TextTrimming.CharacterEllipsis,
+                Style = (Style)FindResource("Hint"), MaxHeight = 58, Margin = new Thickness(0, 0, 0, 8) });
         var url = new TextBox { IsReadOnly = true, Text = share.Link.AbsoluteUri, FontSize = 13 };
         url.GotKeyboardFocus += (_, _) => url.SelectAll();
         System.Windows.Automation.AutomationProperties.SetName(url, "Adresse du lien temporaire");
@@ -249,6 +267,17 @@ public partial class MainWindow : Window
             catch (Exception ex) { Notice(Friendly(ex), true); }
         };
         buttons.Children.Add(copy); buttons.Children.Add(preview); buttons.Children.Add(stop); box.Children.Add(buttons);
+        var stats = new Button { Content = "Téléchargements", Style = (Style)FindResource("TextAction"),
+            HorizontalAlignment = HorizontalAlignment.Left, Margin = new Thickness(0, 0, 0, 6) };
+        stats.Click += (_, _) => ShowDownloads(share);
+        _downloadCounters[share.HistoryId] = stats;
+        var edit = new Button { Content = "Modifier le lien", Style = (Style)FindResource("TextAction"), VerticalAlignment = VerticalAlignment.Center };
+        edit.Click += (_, _) => EditShareDetails(share);
+        var details = new DockPanel { LastChildFill = false };
+        DockPanel.SetDock(edit, Dock.Right);
+        details.Children.Add(edit);
+        details.Children.Add(stats);
+        box.Children.Add(details);
         if (share.Scope == ShareScope.Local)
             box.Children.Add(new TextBlock { Text = "Lien local. Connectez les deux appareils au même réseau.", Style = (Style)FindResource("Hint") });
         else if (!InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out _))
@@ -271,11 +300,13 @@ public partial class MainWindow : Window
         try
         {
             if (await _sharing.MaintainAsync()) Notice("La redirection de la box a changé. Recréez un lien Internet.", true);
+            if (_closing) return;
             await _internet.CollectAsync(_creating);
             RefreshLinks();
         }
         catch (Exception ex) { if (!_closing) Notice(Friendly(ex), true); }
         finally { _maintaining = false; }
+        if (!IsVisible && !HasWork) await QuitAsync();
     }
 
     private void Notice(string text, bool problem = false)
@@ -295,14 +326,49 @@ public partial class MainWindow : Window
         _ => ex.Message
     };
 
+    private bool HasWork => _creating || _receiveTask is not null || _sharing.Active.Length != 0 || _internet.Active.Length != 0;
+
+    public void Reopen()
+    {
+        if (_closing) return;
+        if (!IsVisible) Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        RefreshLinks();
+        Activate();
+    }
+
     private async void OnClosing(object? sender, CancelEventArgs e)
     {
         if (_readyToClose) return;
         e.Cancel = true;
         if (_closing) return;
-        if ((_sharing.Active.Length > 0 || _internet.Active.Length > 0 || _receiveTask is not null || _creating) &&
-            MessageBox.Show(this, "Fermer Passload arrêtera les partages et les transferts en cours. Fermer maintenant ?", "Fermer Passload",
-                MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        if (HasWork)
+        {
+            Hide();
+            RefreshLinks();
+            return;
+        }
+        await QuitAsync();
+    }
+
+    private async void ExitFromTray()
+    {
+        if (_closing) return;
+        if (HasWork && MessageBox.Show("Quitter Passload arrête tous les partages et transferts en cours. Voulez-vous quitter ?",
+            "Quitter Passload", MessageBoxButton.YesNo, MessageBoxImage.Question, MessageBoxResult.No) != MessageBoxResult.Yes) return;
+        await QuitAsync();
+    }
+
+    internal void PrepareForSystemExit()
+    {
+        _readyToClose = true;
+        _timer.Stop();
+        _tray.Dispose();
+    }
+
+    private async Task QuitAsync()
+    {
+        if (_closing) return;
         _closing = true;
         IsEnabled = false;
         _timer.Stop();
@@ -319,7 +385,7 @@ public partial class MainWindow : Window
         {
             _receiver?.Dispose();
             _lifetime.Dispose();
-            _readyToClose = true;
+            PrepareForSystemExit();
             _ = Dispatcher.BeginInvoke(new Action(Close));
         }
     }

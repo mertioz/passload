@@ -3,27 +3,28 @@ import {chooseDestination, saveRemote} from "./save.js";
 import {SocketMeeting} from "./socket-meeting.js";
 
 const status = document.querySelector("#status");
-const show = message => { status.textContent = message; };
+const show = message => {
+  status.textContent = message;
+  status.hidden = !message;
+};
+const httpsAvailable = () => { document.documentElement.dataset.transfer = "https"; };
 let client;
 let busy = false;
 
 async function connect() {
   if (typeof RTCPeerConnection !== "function" || typeof WebSocket !== "function") {
-    show("Téléchargement HTTPS direct.");
+    httpsAvailable();
     return false;
   }
-  show("Connexion WebRTC…");
   const signal = new URL("../rtc", import.meta.url);
-  client = new Incoming((...callbacks) => new SocketMeeting(signal, false, ...callbacks), () => {
-    show("Téléchargement HTTPS direct.");
-  });
+  client = new Incoming((...callbacks) => new SocketMeeting(signal, false, ...callbacks), httpsAvailable);
   try {
     await client.connect(false, 14_000);
-    show("Connexion WebRTC directe.");
+    document.documentElement.dataset.transfer = "webrtc";
     return true;
   } catch {
     client.drop();
-    show("Téléchargement HTTPS direct.");
+    httpsAvailable();
     return false;
   }
 }
@@ -37,7 +38,9 @@ for (const link of document.querySelectorAll("a[data-item]")) {
     busy = true;
     let file;
     try {
+      show("Préparation du téléchargement…");
       if (!await connected || client.closed) {
+        show("");
         location.assign(link.href);
         return;
       }
@@ -48,13 +51,14 @@ for (const link of document.querySelectorAll("a[data-item]")) {
       const destination = navigator.userActivation?.isActive ? await chooseDestination(name, estimate) : null;
       file = await client.open(zip ? "zip" : Number(link.dataset.item));
       await saveRemote(file, name, zip ? null : estimate, zip ? "application/zip" : "application/octet-stream",
-        received => show("WebRTC · " + new Intl.NumberFormat("fr-FR", {maximumFractionDigits:1}).format(received / 1024) + " Ko reçus."), destination);
-      show("Téléchargement WebRTC terminé.");
+        received => show(new Intl.NumberFormat("fr-FR", {maximumFractionDigits:1}).format(received / 1024) + " Ko reçus."), destination);
+      await file.confirm?.();
+      show("Téléchargement terminé.");
     } catch (error) {
       if (error.name === "AbortError") show("Téléchargement annulé.");
       else {
         client.drop();
-        show("Connexion WebRTC interrompue. Téléchargement HTTPS direct.");
+        show("Reprise du téléchargement…");
         location.assign(link.href);
       }
     } finally {

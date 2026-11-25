@@ -40,7 +40,8 @@ public partial class MainWindow
             _receiver?.Dispose();
             // A router may not loop connections to its public IP back to the originating PC.
             var own = _sharing.Active.FirstOrDefault(s => s.Link.AbsoluteUri == ReceiveUrl.Text.Trim());
-            var link = own is null ? ReceiveUrl.Text : new UriBuilder(own.Link) { Host = "127.0.0.1", Port = _settings.Port }.Uri.AbsoluteUri;
+            var link = own is null ? ReceiveUrl.Text : new UriBuilder(own.Link)
+                { Host = "127.0.0.1", Port = _sharing.LocalPort ?? _settings.Port }.Uri.AbsoluteUri;
             _receiver = new ReceiveClient(link);
             var data = await _receiver.InspectAsync(token);
             IncomingSummary.Text = Display.Count(data.Files.Length);
