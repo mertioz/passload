@@ -133,23 +133,26 @@ public partial class MainWindow : Window
         if (_creating || _draft.Count == 0) return;
         _creating = true;
         FileCard.IsEnabled = OptionsCard.IsEnabled = CreateButton.IsEnabled = false;
-        var scope = LocalScope.IsChecked == true ? ShareScope.Local : ShareScope.Internet;
+        var scope = ConnectionMode.SelectedItem == LocalMode ? ShareScope.Local : ShareScope.Internet;
+        var webRtc = ConnectionMode.SelectedItem == WebRtcMode;
         var minutes = int.Parse((string)((ComboBoxItem)Duration.SelectedItem).Tag);
         CreateButton.Content = scope == ShareScope.Internet ? "Connexion en cours…" : "Création en cours…";
         try
         {
             var files = _draft.Keys.ToArray();
             var duration = TimeSpan.FromMinutes(minutes);
-            _createTask = InternetScope.IsChecked == true
+            var port = _settings.Port;
+            _createTask = webRtc
                 ? _internet.CreateAsync(files, duration, RelayOption.IsChecked == true, _lifetime.Token)
-                : _sharing.CreateAsync(files, duration, scope, _settings.Port, _settings.Manual, _lifetime.Token);
+                : _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
+                    scope == ShareScope.Internet ? token => Firewall.EnsureInboundAsync(port, token) : null);
             var share = await _createTask;
             if (_closing) return;
             _draft.Clear();
             RefreshLinks();
             LinksNav.IsChecked = true;
             var copied = Copy(share.Link.AbsoluteUri);
-            Notice(copied ? "Lien créé et copié. Vous pouvez l’envoyer au destinataire." : "Lien créé. Sélectionnez son adresse pour la copier.");
+            Notice(copied ? "Lien copié." : "Lien créé. Sélectionnez son adresse pour la copier.");
         }
         catch (Exception ex) { if (!_closing) Notice(Friendly(ex), true); }
         finally
@@ -225,6 +228,8 @@ public partial class MainWindow : Window
         buttons.Children.Add(copy); buttons.Children.Add(preview); buttons.Children.Add(stop); box.Children.Add(buttons);
         if (share.Scope == ShareScope.Local)
             box.Children.Add(new TextBlock { Text = "Lien local. Connectez les deux appareils au même réseau.", Style = (Style)FindResource("Hint") });
+        else if (!InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out _))
+            box.Children.Add(new TextBlock { Text = "Si le navigateur signale le certificat du PC, ouvrez le lien dans Recevoir pour vérifier son empreinte.", Style = (Style)FindResource("Hint") });
         return Card(box);
     }
 

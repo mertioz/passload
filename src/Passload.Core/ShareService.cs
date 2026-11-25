@@ -10,7 +10,7 @@ public sealed class ShareService : IAsyncDisposable
     public Share[] Active => _catalog.Active;
 
     public async Task<Share> CreateAsync(IEnumerable<string> paths, TimeSpan duration, ShareScope scope, int port,
-        string? manualAddress, CancellationToken cancellation = default)
+        string? manualAddress, CancellationToken cancellation = default, Func<CancellationToken, Task>? authorizeInbound = null)
     {
         var files = await Task.Run(() => SharedFile.Select(paths), cancellation).ConfigureAwait(false);
         var network = NetworkInfo.Read();
@@ -28,6 +28,7 @@ public sealed class ShareService : IAsyncDisposable
                 throw new IOException($"Le PC ne peut pas écouter sur le port TCP {port}. Choisissez un autre port dans Connexion.", ex);
             }
             var route = await RouteAsync(network, scope, port, manualAddress, cancellation).ConfigureAwait(false);
+            if (authorizeInbound is not null) await authorizeInbound(cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
             return _catalog.Add(files, duration, scope, route.Origin, _server.Fingerprint, route.Label, route.Mapped);
         }
@@ -49,13 +50,18 @@ public sealed class ShareService : IAsyncDisposable
         }
         if (NetworkInfo.ManualOrigin(manualAddress, port) is { } manual) return (manual, "Adresse manuelle", false);
         if (network.PublicV4 is { } v4) return (NetworkInfo.Origin(v4, port), "IPv4 directe", false);
-        var sharedIp = false;
+        var failure = RouterFailure.NoReply;
         if (_lease is null)
-            (_lease, sharedIp) = await RouterLease.DiscoverAsync(network, port, cancellation).ConfigureAwait(false);
+            (_lease, failure) = await RouterLease.DiscoverAsync(network, port, cancellation).ConfigureAwait(false);
         if (_lease is not null) return (_lease.Origin, _lease.Label, true);
         if (network.PublicV6 is { } v6) return (NetworkInfo.Origin(v6, port), "IPv6 directe", false);
-        var detail = sharedIp ? "La box indique une adresse IPv4 partagée ou privée." : "Aucune ouverture automatique de la box n’a abouti.";
-        throw new InvalidOperationException($"{detail} Ouvrez « Connexion » pour configurer l’accès Internet, ou choisissez « Réseau local » pour le même Wi-Fi.");
+        var detail = failure switch
+        {
+            RouterFailure.NoPublicAddress => "La box annonce une IPv4 privée ou partagée par l’opérateur.",
+            RouterFailure.PortRejected => "La box répond, mais refuse la redirection temporaire.",
+            _ => "Aucun routeur compatible UPnP ou NAT-PMP n’a répondu."
+        };
+        throw new InvalidOperationException($"{detail} Vérifiez les réglages dans Connexion ou choisissez WebRTC dans Envoyer.");
     }
 
     public async Task RevokeAsync(string token)

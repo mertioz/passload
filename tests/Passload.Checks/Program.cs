@@ -7,6 +7,12 @@ using Mono.Nat;
 using Passload.Checks;
 using Passload.Core;
 
+if (args is ["--direct-check"])
+{
+    await DirectLinkCheck.RunAsync();
+    return;
+}
+
 if (args is ["--browser-fixture", var directory])
 {
     await BrowserFixture.RunAsync(directory);
@@ -131,6 +137,23 @@ try
     Check(await lease.RenewAsync(), "renouvellement du bail en gardant le lien distribué");
     await lease.ReleaseAsync();
     Check(router.Rules.Count == 1 && router.Rules[47831] == existing, "fermeture de la seule redirection créée par Passload");
+    var restricted = new TestRouter(NatProtocol.Upnp) { AcceptsPort = port => port is >= 1024 and < 16384 };
+    var alternative = await RouterLease.CreateAsync(restricted, restricted.External, 47831, default);
+    var rule = restricted.Rules[alternative.Origin.Port];
+    Check(restricted.RequestedPorts[0] == 47831 && restricted.RequestedPorts.Count == 5 &&
+        alternative.Origin.Port < 16384 && rule.PrivatePort == 47831,
+        "UPnP retente dans les autres plages et publie le port externe attribué");
+    await alternative.ReleaseAsync();
+    Check(restricted.Rules.Count == 0, "fermeture du port de remplacement");
+    var permanent = new TestRouter(NatProtocol.Upnp) { ReportsPermanentLease = true };
+    await Throws<IOException>(() => RouterLease.CreateAsync(permanent, permanent.External, 47831, default), "une redirection permanente n’est pas publiée");
+    Check(permanent.Rules.Count == 0, "suppression de la redirection créée à tort comme permanente");
+    var gateway = IPAddress.Parse("192.168.1.1");
+    byte[] Reply(string url) => System.Text.Encoding.ASCII.GetBytes($"HTTP/1.1 200 OK\r\nLOCATION: {url}\r\n\r\n");
+    Check(UpnpDiscovery.GatewayLocation(Reply("http://192.168.1.1:1900/igd.xml"), gateway) is not null,
+        "la découverte SSDP accepte l’adresse du routeur");
+    Check(UpnpDiscovery.GatewayLocation(Reply("http://192.168.1.2:1900/igd.xml"), gateway) is null,
+        "la découverte SSDP écarte les autres hôtes");
     var pmp = new TestRouter(NatProtocol.Pmp) { AssignedPort = 54321 };
     var pmpLease = await RouterLease.CreateAsync(pmp, pmp.External, 47831, default);
     Check(pmpLease.Origin.Port == 54321, "respect du port attribué par NAT-PMP");

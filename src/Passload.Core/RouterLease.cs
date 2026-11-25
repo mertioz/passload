@@ -1,14 +1,20 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Threading.Channels;
 using Mono.Nat;
 
 namespace Passload.Core;
 
+internal enum RouterFailure { NoReply, NoPublicAddress, PortRejected }
+
 internal sealed class RouterLease
 {
     private const int LifetimeSeconds = 600;
+    private const int NoSuchEntry = 714;
+    private const int ConflictWithOtherMechanisms = 729;
     private static readonly TimeSpan RequestTimeout = TimeSpan.FromSeconds(4);
+    private static readonly SemaphoreSlim DiscoveryLock = new(1, 1);
     private readonly INatDevice _device;
     private readonly string _owner;
     private Mapping _mapping;
@@ -26,32 +32,47 @@ internal sealed class RouterLease
         UpdateTimes();
     }
 
-    public static async Task<(RouterLease? Lease, bool SharedAddress)> DiscoverAsync(NetworkInfo network, int port, CancellationToken cancellation)
+    public static async Task<(RouterLease? Lease, RouterFailure Failure)> DiscoverAsync(NetworkInfo network, int port, CancellationToken cancellation)
     {
-        if (network.Gateways.Length == 0) return (null, false);
+        var gateways = network.Gateways.Where(address => address.AddressFamily == AddressFamily.InterNetwork).Distinct().ToArray();
+        if (gateways.Length == 0) return (null, RouterFailure.NoReply);
+        await DiscoveryLock.WaitAsync(cancellation).ConfigureAwait(false);
+        try { return await SearchAsync(gateways, port, cancellation).ConfigureAwait(false); }
+        finally { DiscoveryLock.Release(); }
+    }
+
+    private static async Task<(RouterLease? Lease, RouterFailure Failure)> SearchAsync(IPAddress[] gateways, int port, CancellationToken cancellation)
+    {
         var devices = Channel.CreateUnbounded<INatDevice>();
         var seen = new HashSet<(IPEndPoint, NatProtocol)>();
-        var sharedAddress = false;
+        var failure = RouterFailure.NoReply;
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellation);
-        deadline.CancelAfter(TimeSpan.FromSeconds(7));
+        deadline.CancelAfter(TimeSpan.FromSeconds(10));
         void OnFound(object? sender, DeviceEventArgs args)
         {
-            if (network.Gateways.Contains(args.Device.DeviceEndpoint.Address))
+            if (gateways.Contains(args.Device.DeviceEndpoint.Address))
                 devices.Writer.TryWrite(args.Device);
         }
         NatUtility.DeviceFound += OnFound;
+        Task[] searches = [];
         try
         {
-            NatUtility.StartDiscovery();
+            NatUtility.StartDiscovery(NatProtocol.Pmp);
+            searches = gateways.Select(gateway => UpnpDiscovery.SearchAsync(gateway, deadline.Token)).ToArray();
             await foreach (var device in devices.Reader.ReadAllAsync(deadline.Token).ConfigureAwait(false))
             {
                 if (!seen.Add((device.DeviceEndpoint, device.NatProtocol))) continue;
                 try
                 {
                     var external = await device.GetExternalIPAsync().WaitAsync(RequestTimeout, deadline.Token).ConfigureAwait(false);
-                    if (!NetworkInfo.IsPublic(external)) { sharedAddress = true; continue; }
+                    if (!NetworkInfo.IsPublic(external))
+                    {
+                        if (failure == RouterFailure.NoReply) failure = RouterFailure.NoPublicAddress;
+                        continue;
+                    }
+                    failure = RouterFailure.PortRejected;
                     var lease = await CreateAsync(device, external, port, deadline.Token).ConfigureAwait(false);
-                    return (lease, sharedAddress);
+                    return (lease, failure);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
@@ -63,33 +84,73 @@ internal sealed class RouterLease
         finally
         {
             NatUtility.DeviceFound -= OnFound;
-            NatUtility.StopDiscovery();
-            devices.Writer.TryComplete();
+            await deadline.CancelAsync().ConfigureAwait(false);
+            try { await Task.WhenAll(searches).ConfigureAwait(false); }
+            finally
+            {
+                NatUtility.StopDiscovery();
+                devices.Writer.TryComplete();
+            }
         }
-        return (null, sharedAddress);
+        return (null, failure);
     }
 
     internal static async Task<RouterLease> CreateAsync(INatDevice device, IPAddress external, int port, CancellationToken cancellation)
     {
         var owner = "Passload-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(5));
-        var publicPort = port;
-        if (device.NatProtocol == NatProtocol.Upnp)
+        if (device.NatProtocol != NatProtocol.Upnp)
         {
-            for (var attempt = 0; attempt < 5; attempt++)
-            {
-                try
-                {
-                    await device.GetSpecificMappingAsync(Protocol.Tcp, publicPort).WaitAsync(RequestTimeout, cancellation).ConfigureAwait(false);
-                }
-                catch (MappingException e) when ((int)e.ErrorCode == 714) { break; }
-                if (attempt == 4) throw new IOException("Aucun port disponible sur la box.");
-                publicPort = RandomNumberGenerator.GetInt32(49152, 65535);
-            }
+            var assigned = await MapAsync(device, port, port, owner, cancellation).ConfigureAwait(false);
+            return new RouterLease(device, assigned, external, owner);
         }
-        // Request finite leases only. A delayed response or a crashed PC cannot leave a permanent rule.
-        var request = new Mapping(Protocol.Tcp, port, publicPort, LifetimeSeconds, owner);
-        var actual = await device.CreatePortMapAsync(request).WaitAsync(RequestTimeout, cancellation).ConfigureAwait(false);
-        return new RouterLease(device, actual, external, owner);
+
+        // An ISP can assign the router only a portion of the external TCP ports.
+        // Try the requested port first, then one alternative in each quarter.
+        int[] candidates =
+        [
+            port,
+            RandomNumberGenerator.GetInt32(49152, 65536),
+            RandomNumberGenerator.GetInt32(32768, 49152),
+            RandomNumberGenerator.GetInt32(16384, 32768),
+            RandomNumberGenerator.GetInt32(1024, 16384)
+        ];
+        foreach (var candidate in candidates.Distinct())
+        {
+            if (await FindAsync(device, candidate, cancellation).ConfigureAwait(false) is not null) continue;
+            try
+            {
+                var assigned = await MapAsync(device, port, candidate, owner, cancellation).ConfigureAwait(false);
+                var confirmed = await ConfirmUpnpAsync(device, assigned, owner, cancellation).ConfigureAwait(false)
+                    ?? throw new IOException("La redirection temporaire n’a pas pu être confirmée.");
+                return new RouterLease(device, confirmed, external, owner);
+            }
+            catch (MappingException error) when (error.ErrorCode == ErrorCode.ConflictInMappingEntry ||
+                    (int)error.ErrorCode == ConflictWithOtherMechanisms) { }
+        }
+        throw new IOException("Aucun port public disponible sur la box.");
+    }
+
+    private static async Task<Mapping?> FindAsync(INatDevice device, int port, CancellationToken cancellation = default)
+    {
+        try { return await device.GetSpecificMappingAsync(Protocol.Tcp, port).WaitAsync(RequestTimeout, cancellation).ConfigureAwait(false); }
+        catch (MappingException error) when ((int)error.ErrorCode == NoSuchEntry) { return null; }
+    }
+
+    private static bool Owned(Mapping? mapping, string owner, int privatePort) =>
+        mapping is not null && mapping.Description == owner && mapping.PrivatePort == privatePort;
+
+    private static Task<Mapping> MapAsync(INatDevice device, int privatePort, int publicPort, string owner, CancellationToken cancellation = default) =>
+        device.CreatePortMapAsync(new Mapping(Protocol.Tcp, privatePort, publicPort, LifetimeSeconds, owner))
+            .WaitAsync(RequestTimeout, cancellation);
+
+    private static async Task<Mapping?> ConfirmUpnpAsync(INatDevice device, Mapping requested, string owner, CancellationToken cancellation = default)
+    {
+        var current = await FindAsync(device, requested.PublicPort, cancellation).ConfigureAwait(false);
+        if (!Owned(current, owner, requested.PrivatePort)) return null;
+        if (current!.Lifetime > 0) return current;
+        // Some routers install a permanent rule even when a finite duration was requested.
+        await device.DeletePortMapAsync(requested).WaitAsync(RequestTimeout).ConfigureAwait(false);
+        return null;
     }
 
     public async Task<bool> RenewAsync()
@@ -98,9 +159,19 @@ internal sealed class RouterLease
         {
             var external = await _device.GetExternalIPAsync().WaitAsync(RequestTimeout).ConfigureAwait(false);
             if (NetworkInfo.Origin(external, _mapping.PublicPort) != Origin) return false;
-            if (await OtherOwnerAsync().ConfigureAwait(false)) return false;
-            var request = new Mapping(Protocol.Tcp, _mapping.PrivatePort, _mapping.PublicPort, LifetimeSeconds, _owner);
-            _mapping = await _device.CreatePortMapAsync(request).WaitAsync(RequestTimeout).ConfigureAwait(false);
+            if (_device.NatProtocol == NatProtocol.Upnp)
+            {
+                var current = await FindAsync(_device, _mapping.PublicPort).ConfigureAwait(false);
+                if (current is not null && !Owned(current, _owner, _mapping.PrivatePort)) return false;
+            }
+            var renewed = await MapAsync(_device, _mapping.PrivatePort, _mapping.PublicPort, _owner).ConfigureAwait(false);
+            if (_device.NatProtocol == NatProtocol.Upnp)
+            {
+                var confirmed = await ConfirmUpnpAsync(_device, renewed, _owner).ConfigureAwait(false);
+                if (confirmed is null) return false;
+                renewed = confirmed;
+            }
+            _mapping = renewed;
             if (_mapping.PublicPort != Origin.Port) return false;
             UpdateTimes();
             return true;
@@ -120,23 +191,13 @@ internal sealed class RouterLease
         RenewAt = now.AddSeconds(seconds * 0.5);
     }
 
-    private async Task<bool> OtherOwnerAsync()
-    {
-        if (_device.NatProtocol != NatProtocol.Upnp) return false;
-        try
-        {
-            var current = await _device.GetSpecificMappingAsync(Protocol.Tcp, _mapping.PublicPort).WaitAsync(RequestTimeout).ConfigureAwait(false);
-            return current.Description != _owner || current.PrivatePort != _mapping.PrivatePort;
-        }
-        catch (MappingException e) when ((int)e.ErrorCode == 714) { return false; }
-    }
-
     public async Task ReleaseAsync()
     {
         try
         {
-            if (!await OtherOwnerAsync().ConfigureAwait(false))
-                await _device.DeletePortMapAsync(_mapping).WaitAsync(RequestTimeout).ConfigureAwait(false);
+            if (_device.NatProtocol == NatProtocol.Upnp &&
+                !Owned(await FindAsync(_device, _mapping.PublicPort).ConfigureAwait(false), _owner, _mapping.PrivatePort)) return;
+            await _device.DeletePortMapAsync(_mapping).WaitAsync(RequestTimeout).ConfigureAwait(false);
         }
         catch { /* A disconnected gateway will age out the finite lease. */ }
     }

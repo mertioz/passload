@@ -1,0 +1,24 @@
+name: Partage par IP publique
+
+on:
+  workflow_dispatch:
+    inputs:
+      probe:
+        description: Identifiant aléatoire du test
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  receive:
+    name: Télécharger depuis un autre réseau
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - run: dotnet run --project tests/Passload.Checks -c Release -- --direct-check

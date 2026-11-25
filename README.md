@@ -9,34 +9,36 @@ Partagez un ou plusieurs fichiers depuis un PC Windows avec un lien temporaire. 
 ## Envoyer
 
 1. Lancez `Passload.exe`. Déposez les fichiers dans la fenêtre ou choisissez **Parcourir les fichiers**.
-2. Choisissez une durée, puis **Créer le lien**. Envoyez le lien copié à votre destinataire. Il contient la clé d’accès après le signe `#`.
+2. Choisissez **Adresse IP publique**, **WebRTC** ou **Réseau local** et une durée. Cliquez sur **Créer le lien** et envoyez l’adresse complète à votre destinataire.
 3. Gardez Passload ouvert, le PC éveillé et les fichiers à leur emplacement jusqu’à la fin du téléchargement.
 
 **Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration ou la fermeture de Passload met également fin au partage.
 
 ## Recevoir
 
-Ouvrez le lien complet dans un navigateur récent. Les boutons permettent de choisir un fichier ou **Tout télécharger en ZIP**. Le navigateur indique si la connexion est directe ou utilise le relais chiffré.
+Ouvrez le lien complet dans un navigateur récent ou collez-le dans **Recevoir** sur un deuxième PC Windows. Les boutons permettent de choisir un fichier ou **Tout télécharger en ZIP**. Le ZIP est construit au fil de l’envoi et les fichiers homonymes conservent des entrées distinctes.
 
-Vous pouvez aussi coller le lien dans **Recevoir** sur un deuxième PC Windows. L’application ouvre alors sa copie locale de la page de réception dans le navigateur. Le ZIP est construit au fil de l’envoi. Les fichiers homonymes conservent des entrées distinctes.
+## Adresse IP publique et réseau local
 
-Pour les fichiers volumineux, le navigateur peut utiliser un fichier temporaire sur le disque du destinataire avant de proposer la copie terminée. Le bouton **Enregistrer à nouveau** permet de relancer l’enregistrement local. Les fichiers temporaires ordinaires sont nettoyés après la copie. Une réception ultérieure supprime aussi les restes âgés de plus de huit jours.
+**Adresse IP publique** crée un lien HTTPS qui pointe vers le PC expéditeur. Passload demande à la box une redirection TCP temporaire par UPnP ou NAT-PMP, puis la renouvelle pendant le partage. Sur une connexion où l’opérateur limite les ports disponibles, Passload essaie des ports externes de différentes plages. Le port reçu de la box figure dans le lien. **Arrêter le partage** permet de libérer la redirection dès que le dernier lien qui l’utilise prend fin.
 
-## Comment les deux PC se connectent
+Le port local par défaut est **47831**. Windows peut demander une autorisation de pare-feu pour Passload lors du premier partage public. **Connexion → Réglages avancés** permet aussi de préciser une redirection manuelle, un nom de domaine ou les réglages du pare-feu.
+
+Le mode direct nécessite une adresse IP publique joignable. Un opérateur ou un autre routeur peut bloquer les connexions entrantes. **Réseau local** donne un lien pour des appareils connectés au même réseau.
+
+Ces deux types de lien utilisent un certificat créé sur le PC. **Recevoir** vérifie l’empreinte SHA-256. Si un navigateur signale un certificat inconnu, comparez son empreinte à la valeur `#sha256=` du lien reçu avant de poursuivre. Les téléchargements individuels HTTPS acceptent les requêtes de reprise.
+
+## WebRTC
 
 - **Mise en relation.** Les deux appareils échangent des messages chiffrés via le service public Piping Server. Un serveur STUN aide WebRTC à identifier les chemins réseau disponibles. Le PC expéditeur vérifie que la mise en relation fonctionne avant de copier le lien. [Piping Server](https://github.com/nwtgck/piping-server) · [WebRTC](https://www.w3.org/TR/webrtc/)
-- **Transfert direct.** Les deux appareils essaient un canal de données WebRTC chiffré par DTLS. Lorsqu’il s’ouvre, les fichiers passent entre les appareils. Le mode Internet utilise des connexions sortantes et fonctionne sans régler les ports de la box.
+- **Transfert direct.** Les deux appareils essaient un canal de données WebRTC chiffré par DTLS. Lorsqu’il s’ouvre, les fichiers passent entre les appareils. Ce mode utilise des connexions sortantes et fonctionne sans régler les ports de la box.
 - **Secours.** Si le chemin direct échoue, le PC chiffre les blocs de données avant de les envoyer par HTTPS au relais public `ppng.io`. Celui-ci associe une requête d’envoi à une requête de réception et transmet les octets en flux. Le destinataire les déchiffre sur son appareil. Le relais ne conserve aucun fichier. Ce secours peut être désactivé dans **Connexion → Réglages avancés**. [Fonctionnement du relais](https://github.com/nwtgck/piping-server#features)
 - **Clés.** Chaque partage génère une clé d’accès aléatoire de 256 bits et une paire de clés P-256. Chaque destinataire crée sa propre clé éphémère. ECDH et HKDF-SHA-256 dérivent une clé de session et des adresses de rendez-vous distinctes. AES-GCM authentifie les messages de négociation et les blocs relayés, en liant chaque bloc à sa direction et à son numéro de séquence. Un détenteur du lien peut télécharger les fichiers jusqu’à l’expiration.
 - **Page web.** GitHub Pages distribue la page et son JavaScript. La clé se trouve dans le fragment du lien, que le navigateur garde localement. Les fichiers partagés ne sont jamais envoyés à GitHub. La même page est intégrée à l’exécutable pour les réceptions lancées depuis Passload.
 
-Le mode Internet dépend de la disponibilité du service public de mise en relation et de son accessibilité depuis les deux réseaux. Un réseau qui bloque ce service, un PC éteint ou un partage expiré empêche un nouveau téléchargement.
+Ce mode dépend de la disponibilité du service public de mise en relation et de son accessibilité depuis les deux réseaux. La page de réception indique si le transfert est direct ou relayé.
 
-## Réseau local et liens par adresse IP
-
-Dans **Connexion**, **Réseau local** fonctionne sur un même réseau, y compris hors Internet. **Par adresse IP** conserve l’accès direct par HTTPS avec IPv4, IPv6, UPnP, NAT-PMP ou une redirection TCP manuelle. Le port par défaut de ces modes est **47831**. Les réglages du pare-feu Windows se trouvent dans les options avancées.
-
-Ces deux modes utilisent un certificat créé sur le PC. **Recevoir** vérifie l’empreinte SHA-256 du lien. Dans un navigateur qui signale un certificat inconnu, comparez son empreinte à la valeur `#sha256=` du lien reçu avant de poursuivre. Les téléchargements individuels par adresse IP acceptent les requêtes HTTP de reprise.
+Pour les fichiers volumineux, cette page peut utiliser un fichier temporaire sur le disque du destinataire avant de proposer la copie terminée. Le bouton **Enregistrer à nouveau** permet de relancer l’enregistrement local. Les fichiers temporaires sont nettoyés après la copie ou lors d’une visite ultérieure.
 
 ## Compiler et vérifier
 

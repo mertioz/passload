@@ -7,6 +7,9 @@ internal sealed class TestRouter(NatProtocol protocol) : INatDevice
 {
     public Dictionary<int, Mapping> Rules { get; } = new();
     public int? AssignedPort { get; set; }
+    public Func<int, bool> AcceptsPort { get; set; } = _ => true;
+    public bool ReportsPermanentLease { get; set; }
+    public List<int> RequestedPorts { get; } = [];
     public IPAddress External { get; set; } = IPAddress.Parse("203.0.113.10");
     public IPEndPoint DeviceEndpoint { get; } = new(IPAddress.Loopback, 5351);
     public DateTime LastSeen => DateTime.UtcNow;
@@ -17,7 +20,10 @@ internal sealed class TestRouter(NatProtocol protocol) : INatDevice
         ? Task.FromResult(value) : Task.FromException<Mapping>(new MappingException((ErrorCode)714, "NoSuchEntryInArray"));
     public Task<Mapping> CreatePortMapAsync(Mapping m)
     {
-        var assigned = new Mapping(m.Protocol, m.PrivatePort, AssignedPort ?? m.PublicPort, m.Lifetime, m.Description);
+        RequestedPorts.Add(m.PublicPort);
+        if (!AcceptsPort(m.PublicPort))
+            return Task.FromException<Mapping>(new MappingException(ErrorCode.ConflictInMappingEntry, "Port unavailable"));
+        var assigned = new Mapping(m.Protocol, m.PrivatePort, AssignedPort ?? m.PublicPort, ReportsPermanentLease ? 0 : m.Lifetime, m.Description);
         Rules[assigned.PublicPort] = assigned;
         return Task.FromResult(assigned);
     }
