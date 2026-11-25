@@ -20,6 +20,11 @@ public partial class App : Application
         base.OnStartup(e);
         CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
         CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
+        if (e.Args is ["--install-update", var previous, var hash, var presentation] && int.TryParse(previous, out var previousId))
+        {
+            Shutdown(AppUpdate.Install(previousId, hash, presentation == "show"));
+            return;
+        }
         if (e.Args is ["--authorize-port", var value] && int.TryParse(value, out var port) && port is >= 1024 and <= 65535)
         {
             Shutdown(Firewall.Authorize(port));
@@ -43,6 +48,7 @@ public partial class App : Application
         _activation = ThreadPool.RegisterWaitForSingleObject(_showWindow,
             (_, _) => Dispatcher.BeginInvoke(new Action(window.Reopen)), null, Timeout.Infinite, false);
         window.Show();
+        window.StartUpdateChecks(e.Args.Length == 1 ? e.Args[0] : null);
     }
 
     protected override void OnSessionEnding(SessionEndingCancelEventArgs e)

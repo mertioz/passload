@@ -9,8 +9,10 @@ import {join} from "node:path";
 import {connect} from "node:tls";
 import {chromium, firefox} from "playwright-core";
 
-const link = new URL(process.env.PASSLOAD_BROWSER_TEST_LINK ??
+const advertised = new URL(process.env.PASSLOAD_BROWSER_TEST_LINK ??
   await readFile(process.env.PASSLOAD_SMOKE_OUTPUT, "utf8"));
+const publicPage = advertised.pathname === "/" && advertised.hash.startsWith("#v1.");
+const link = publicPage ? new URL(Buffer.from(advertised.hash.split(".")[2], "base64url").toString("utf8")) : advertised;
 assert.match(link.pathname, /^\/s\/[A-Za-z0-9_-]{43}$/);
 const trustedHost = process.env.PASSLOAD_SMOKE_HOSTNAME?.trim().toLowerCase();
 if (trustedHost) assert.equal(link.hostname, trustedHost);
@@ -92,10 +94,23 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
       });
       socket.on("socketerror", error => signalling.push(error.match(/\b[45]\d\d\b/)?.[0] ?? "socketerror"));
     });
-    await page.goto(link.href, {waitUntil:"domcontentloaded"}).catch(() => {
+    await page.goto(advertised.href, {waitUntil:"domcontentloaded"}).catch(() => {
       throw new Error("La page du PC expéditeur est inaccessible.");
     });
     const status = page.locator("#status");
+    let inPortal = false;
+    if (publicPage) {
+      await page.waitForFunction(() => document.documentElement.dataset.transfer === "webrtc" ||
+        document.getElementById("https")?.hidden === false, null, {timeout:65_000}).catch(async () => {
+        throw new Error("Page de réception · " + await status.textContent());
+      });
+      inPortal = await page.locator("html").getAttribute("data-transfer") === "webrtc";
+      if (!inPortal) {
+        if (!webRtcBlocked && (loopback || process.env.PASSLOAD_REQUIRE_WEBRTC === "1"))
+          throw new Error("WebRTC indisponible sur la page commune · " + await status.textContent());
+        await page.getByRole("link", {name:"Ouvrir le téléchargement HTTPS"}).click();
+      }
+    }
     await page.waitForFunction(() => ["webrtc","https"].includes(document.documentElement.dataset.transfer),
       null, {timeout:40_000}).catch(async () => {
       throw new Error("Statut reçu · " + await status.textContent());
@@ -114,7 +129,7 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
       await context.route(/\/(?:files\/\d+|all\.zip)$/, route => route.abort());
     }
     for (const file of ["probe.txt", "Passload.zip"]) {
-      const action = page.getByRole("link", {name:file.endsWith(".zip") ? "Tout télécharger en ZIP" : "Télécharger " + file, exact:true});
+      const action = page.getByRole(inPortal ? "button" : "link", {name:file.endsWith(".zip") ? "Tout télécharger en ZIP" : "Télécharger " + file, exact:true});
       const [download] = await Promise.all([page.waitForEvent("download", {timeout:30_000}), action.click()])
         .catch(async () => { throw new Error("Téléchargement indisponible · " + await status.textContent()); });
       const saved = join(output, file);
@@ -131,7 +146,7 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
     }
     const mode = webRtc ? "WebRTC direct avec les téléchargements HTTPS bloqués"
       : webRtcBlocked ? "HTTPS de secours avec WebRTC désactivé" : "Secours HTTPS après négociation WebRTC";
-    console.log(name + " · " + mode + ", fichier et ZIP identiques.");
+    console.log(name + " · " + mode + (inPortal ? " sur la page commune" : "") + ", fichier et ZIP identiques.");
   } finally { await context.close(); }
 }
 

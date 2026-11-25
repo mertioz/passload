@@ -1,0 +1,61 @@
+name: Versions Linux et macOS
+on: workflow_dispatch
+
+permissions:
+  contents: read
+
+jobs:
+  portable:
+    name: ${{ matrix.rid }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { rid: linux-x64, runner: ubuntu-24.04 }
+          - { rid: linux-arm64, runner: ubuntu-24.04-arm }
+          - { rid: osx-x64, runner: macos-15-intel }
+          - { rid: osx-arm64, runner: macos-15 }
+    env:
+      RID: ${{ matrix.rid }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Compiler l’exécutable autonome
+        run: |
+          dotnet publish src/Passload.Cli -c Release -r "$RID" --self-contained \
+            -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+            -p:EnableCompressionInSingleFile=true -p:DebugType=None -o "$RUNNER_TEMP/bin"
+      - name: Télécharger et fermer un partage de démonstration
+        shell: bash
+        run: |
+          app="$RUNNER_TEMP/bin/passload"
+          "$app" --version
+          printf '%s\n' 'Passload portable smoke test' > "$RUNNER_TEMP/fixture.txt"
+          "$app" --local "$RUNNER_TEMP/fixture.txt" > "$RUNNER_TEMP/link" &
+          sender=$!
+          trap 'kill -TERM "$sender" 2>/dev/null || true; wait "$sender" || true' EXIT
+          for attempt in {1..45}; do
+            if [[ -s "$RUNNER_TEMP/link" ]]; then break; fi
+            kill -0 "$sender"
+            sleep 1
+          done
+          link=$(head -n 1 "$RUNNER_TEMP/link")
+          "$app" --receive "$link" "$RUNNER_TEMP/download.txt"
+          cmp "$RUNNER_TEMP/fixture.txt" "$RUNNER_TEMP/download.txt"
+          kill -TERM "$sender"
+          wait "$sender"
+          trap - EXIT
+          if "$app" --receive "$link" "$RUNNER_TEMP/closed.txt"; then exit 1; fi
+      - name: Préparer l’archive
+        run: |
+          cp LICENSE "$RUNNER_TEMP/bin/LICENSE"
+          tar -czf "passload-$RID.tar.gz" -C "$RUNNER_TEMP/bin" passload LICENSE
+      - uses: actions/upload-artifact@v4
+        with:
+          name: passload-${{ matrix.rid }}
+          path: passload-${{ matrix.rid }}.tar.gz
+          if-no-files-found: error

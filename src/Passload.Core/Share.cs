@@ -57,6 +57,7 @@ public sealed class Share
     private readonly DownloadRanges _ranges = new();
     private readonly object _detailsLock = new();
     private ShareDetails _details = new(null, null);
+    private readonly WebRtcInvitation? _invitation;
     public const int MaxTitleLength = 120;
     public const int MaxDescriptionLength = 1200;
     public CancellationToken Ended { get; }
@@ -70,6 +71,7 @@ public sealed class Share
     public ShareScope Scope { get; }
     public string RouteLabel { get; }
     public Uri Link { get; }
+    public Uri PublishedLink { get; }
     public bool UsesTrustedHttps { get; }
     public bool UsesPublicWebRtc => RtcRoom is not null;
     internal PublicRtcRoom? RtcRoom { get; }
@@ -78,7 +80,7 @@ public sealed class Share
     public long TotalSize { get; }
 
     internal Share(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc, DownloadHistory history,
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter, bool publicWebRtc, DownloadHistory history,
         bool trustedHttps)
     {
         if (files.Count == 0 || duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(7))
@@ -94,7 +96,17 @@ public sealed class Share
         UsesRouter = usesRouter;
         UsesTrustedHttps = trustedHttps;
         RtcRoom = publicWebRtc ? new PublicRtcRoom() : null;
-        Link = publicLink ?? new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
+        Link = new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
+        if (publicWebRtc && scope == ShareScope.Internet) _invitation = WebRtcInvitation.Create();
+        PublishedLink = scope == ShareScope.Internet ? ShareLinks.Publish(Link, ExpiresAt, _invitation?.Room, _invitation?.AccessKey) : Link;
+    }
+
+    public object WebRtcStartMessage(bool sharedPage)
+    {
+        var until = ExpiresAt.ToUnixTimeMilliseconds();
+        if (sharedPage && _invitation is { } invite)
+            return new { op = "start", token = Token, until, room = invite.Room, key = invite.AccessKey, owner = invite.OwnerKey };
+        return new { op = "start", token = Token, until, silent = !sharedPage && _invitation is not null };
     }
 
     public void UpdateDetails(string? title, string? description)
@@ -165,10 +177,10 @@ public sealed class ShareCatalog(DownloadHistory? history = null)
     public Share[] Active => _shares.Values.Where(s => s.Active).OrderBy(s => s.ExpiresAt).ToArray();
 
     public Share Add(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null, bool publicWebRtc = false,
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, bool publicWebRtc = false,
         bool trustedHttps = false)
     {
-        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc, History,
+        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicWebRtc, History,
             trustedHttps);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();

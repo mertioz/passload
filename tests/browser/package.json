@@ -2,6 +2,6 @@
   "name": "passload-browser-checks",
   "private": true,
   "type": "module",
-  "scripts": { "check": "node receive.mjs", "fixtures": "node fixtures.mjs" },
+  "scripts": { "check": "node public-receive.mjs" },
   "devDependencies": { "playwright-core": "1.65.1" }
 }

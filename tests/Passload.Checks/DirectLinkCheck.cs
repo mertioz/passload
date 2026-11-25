@@ -24,7 +24,7 @@ internal static class DirectLinkCheck
         var token = timeout.Token;
         using var rendezvous = new HttpClient { Timeout = TimeSpan.FromMinutes(3), MaxResponseContentBufferSize = 4096 };
         var link = (await rendezvous.GetStringAsync($"https://ppng.io/passload-direct-check-{channel:N}", token)).Trim();
-        if (!Uri.TryCreate(link, UriKind.Absolute, out var publicLink) || publicLink.Scheme != Uri.UriSchemeHttps)
+        if (!Uri.TryCreate(ShareLinks.DirectAddress(link), UriKind.Absolute, out var publicLink) || publicLink.Scheme != Uri.UriSchemeHttps)
             throw new InvalidOperationException("Le test attend un lien HTTPS.");
         if (hostname is null)
         {

@@ -15,15 +15,9 @@ if (args is ["--direct-check"])
     return;
 }
 
-if (args is ["--browser-fixture", var directory])
-{
-    await BrowserFixture.RunAsync(directory);
-    return;
-}
-
 if (args is ["--public-rtc-fixture", var rtcDirectory])
 {
-    await BrowserFixture.RunAsync(rtcDirectory, publicWebRtc: true);
+    await BrowserFixture.RunAsync(rtcDirectory);
     return;
 }
 
@@ -190,7 +184,7 @@ try
     await using (var engine = await TransferServer.StartAsync(privateCatalog,0,[],loopbackOnly:true,browserEngine:true))
     {
         var localOrigin = new Uri($"http://127.0.0.1:{engine.Port}");
-        var preview = privateCatalog.Add(SharedFile.Select([file]),TimeSpan.FromMinutes(1),ShareScope.Internet,localOrigin,"","Internet",publicLink:new Uri("https://passload.example/#test"));
+        var preview = privateCatalog.Add(SharedFile.Select([file]),TimeSpan.FromMinutes(1),ShareScope.Internet,localOrigin,"","Internet");
         using var browser = new HttpClient {BaseAddress=localOrigin};
         var localBase = $"/s/{preview.Token}";
         Check(WebUtility.HtmlDecode(await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"),
@@ -206,6 +200,17 @@ try
 
     }
     var rtc = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Local, origin, server.Fingerprint, "WebRTC", publicWebRtc:true);
+    var publicShare = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Internet, origin, server.Fingerprint, "WebRTC", publicWebRtc:true);
+    Check(publicShare.PublishedLink.Host == "transfer.aymen.site" && publicShare.PublishedLink.AbsolutePath == "/" &&
+        publicShare.PublishedLink.Fragment.Split('.').Length == 5 && ShareLinks.DirectAddress(publicShare.PublishedLink.AbsoluteUri) == publicShare.Link.AbsoluteUri,
+        "adresse WebRTC commune et secours direct vérifiable");
+    var httpsShare = catalog.Add(SharedFile.Select([file]), TimeSpan.FromMinutes(1), ShareScope.Internet, origin, server.Fingerprint, "HTTPS");
+    using (var portalReceiver = new ReceiveClient(httpsShare.PublishedLink.AbsoluteUri))
+    {
+        Check(httpsShare.PublishedLink.Host == "transfer.aymen.site" && httpsShare.PublishedLink.Fragment.Split('.').Length == 3 &&
+            (await portalReceiver.InspectAsync(default)).Files.Length == 1, "lien HTTPS commun reconnu par la réception native");
+    }
+    Check(rtc.PublishedLink == rtc.Link, "lien local distribué directement sur le réseau");
     await using (var engine = await TransferServer.StartAsync(new ShareCatalog(), 0, [], loopbackOnly:true,
         browserEngine:true, publicShares:catalog.Find))
     {

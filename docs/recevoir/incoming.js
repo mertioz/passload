@@ -12,7 +12,7 @@ export class Incoming {
     this.nextId = 1;
     this.closed = false;
   }
-  async connect(forceRelay = false, directTimeout) {
+  async connect(forceRelay = false, directTimeout, allowRelay = true) {
     const socket = await this.createMeeting(msg => {
       if (msg.op === "ready") this.peer = new Peer(socket, msg.peer, p => this.packet(p), () => this.drop());
     }, async (id, type, bytes) => {
@@ -29,16 +29,17 @@ export class Incoming {
     let ready;
     try { ready = await deadline(socket.ready.promise, 18_000, offline); }
     catch { throw new Error(offline); }
-    this.canRelay = ready.relay;
+    const relay = allowRelay && ready.relay;
+    this.canRelay = relay;
     this.show("Recherche d’une connexion directe…");
     let direct = false;
-    if (this.peer.pc && !(forceRelay && ready.relay)) {
+    if (this.peer.pc && !(forceRelay && relay)) {
       try {
         await deadline(this.peer.offer(), 6000, "Connexion directe indisponible.");
-        direct = await deadline(this.peer.direct.promise, directTimeout ?? (ready.relay ? 6_000 : 15_000), "Connexion directe indisponible.");
+        direct = await deadline(this.peer.direct.promise, directTimeout ?? (relay ? 6_000 : 15_000), "Connexion directe indisponible.");
       } catch { /* Some browsers or networks cannot establish a data channel. */ }
     }
-    if (!direct && !ready.relay) throw new Error("Les réseaux des deux appareils bloquent la connexion directe. Réessayez depuis un autre réseau.");
+    if (!direct && !relay) throw new Error("Les réseaux des deux appareils bloquent la connexion directe. Réessayez depuis un autre réseau.");
     const mode = direct ? "direct" : "relay";
     if (!direct) this.show("Ouverture du relais chiffré…");
     this.mode = mode;

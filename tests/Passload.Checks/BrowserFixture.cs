@@ -5,26 +5,23 @@ namespace Passload.Checks;
 
 internal static class BrowserFixture
 {
-    // Used by the two-machine browser test. The private configuration goes to the
-    // parent process over a local pipe. Only fixed, public test fixtures are served.
-    public static async Task RunAsync(string directory, bool publicWebRtc = false)
+    // The browser test reads a temporary link for synthetic files from stdout.
+    public static async Task RunAsync(string directory)
     {
-        string[] names = publicWebRtc ? ["probe.txt", "probe.bin"] : ["notes-test.txt", "donnees-test.bin", "vide.txt"];
+        string[] names = ["probe.txt", "probe.bin"];
         var files = SharedFile.Select(names.Select(n => Path.Combine(directory,n)));
         var catalog = new ShareCatalog();
         try
         {
             await using var server = await TransferServer.StartAsync(catalog,0,[],loopbackOnly:true,browserEngine:true);
-            await using var https = publicWebRtc ? await TransferServer.StartAsync(catalog, 0, [], loopbackOnly:true) : null;
+            await using var https = await TransferServer.StartAsync(catalog, 0, [], loopbackOnly:true);
             var duration = TimeSpan.FromMinutes(9);
             var origin = new Uri($"http://127.0.0.1:{server.Port}");
-            var viewer = https is not null ? new Uri($"https://127.0.0.1:{https.Port}") : new Uri("https://mertioz.github.io/passload/recevoir/");
-            var invite = publicWebRtc ? null : InternetInvitation.Create(viewer, duration);
-            var share = catalog.Add(files, duration, ShareScope.Internet, viewer, https?.Fingerprint ?? "", "Internet",
-                publicLink:invite?.Link, publicWebRtc:publicWebRtc);
-            var message = invite?.StartMessage(share.Token, true) ??
-                new { op = "start", token = share.Token, until = share.ExpiresAt.ToUnixTimeMilliseconds(), publicRtc = true };
-            var init = new {page = new Uri(origin, "/engine/host").AbsoluteUri, link = share.Link.AbsoluteUri, message};
+            var viewer = new Uri($"https://127.0.0.1:{https.Port}");
+            var share = catalog.Add(files, duration, ShareScope.Internet, viewer, https.Fingerprint, "Internet", publicWebRtc: true);
+            var message = new { op = "start", token = share.Token, until = share.ExpiresAt.ToUnixTimeMilliseconds() };
+            var init = new {page = new Uri(origin, "/engine/host").AbsoluteUri, link = share.Link.AbsoluteUri, message,
+                sharedLink = share.PublishedLink.AbsoluteUri, sharedMessage = share.WebRtcStartMessage(sharedPage:true)};
             await Console.Out.WriteLineAsync(JsonSerializer.Serialize(init));
             await Console.Out.FlushAsync();
             await Console.In.ReadLineAsync();

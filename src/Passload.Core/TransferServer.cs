@@ -123,7 +123,8 @@ public sealed class TransferServer : IAsyncDisposable
         }
         ctx.Response.Headers.CacheControl = "no-store";
         ctx.Response.Headers["Referrer-Policy"] = "no-referrer";
-        ctx.Response.Headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self' ws://127.0.0.1:* https://ppng.io; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
+        var connections = path == "/recevoir/" ? "'self' https://ppng.io" : "'self' ws://127.0.0.1:* https://ppng.io";
+        ctx.Response.Headers["Content-Security-Policy"] = $"default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src {connections}; worker-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
         if (path == "/engine/host")
         {
             ctx.Response.ContentType = "text/html; charset=utf-8";

@@ -1,5 +1,6 @@
 <Solution>
   <Folder Name="/src/">
+    <Project Path="src/Passload.Cli/Passload.Cli.csproj" />
     <Project Path="src/Passload.Core/Passload.Core.csproj" />
     <Project Path="src/Passload/Passload.csproj" />
   </Folder>

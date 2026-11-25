@@ -101,7 +101,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
             RouterFailure.PortRejected => "La box répond, mais refuse la redirection temporaire.",
             _ => "Aucun routeur compatible UPnP ou NAT-PMP n’a répondu."
         };
-        throw new InvalidOperationException($"{detail} Vérifiez les réglages dans Connexion ou choisissez WebRTC sans redirection.");
+        throw new InvalidOperationException($"{detail} Vérifiez la redirection de port dans Connexion ou choisissez Réseau local pour les appareils sur le même réseau.");
     }
 
     public async Task RevokeAsync(string token)

@@ -23,11 +23,11 @@ public partial class MainWindow
     private async void InspectLink(object sender, RoutedEventArgs e)
     {
         if (_receiveTask is not null) return;
-        if (InternetSharing.IsBrowserLink(ReceiveUrl.Text, out var publicLink))
+        if (InternetSharing.IsLegacyLink(ReceiveUrl.Text, out var legacyLink))
         {
             try
             {
-                var page = await _internet.ReaderUriAsync(publicLink!, _lifetime.Token);
+                var page = await _internet.LegacyReaderUriAsync(legacyLink!, _lifetime.Token);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
                 Notice("Lien ouvert dans le navigateur.");
             }
@@ -39,8 +39,9 @@ public partial class MainWindow
             IncomingCard.Visibility = Visibility.Collapsed;
             _receiver?.Dispose();
             // A router may not loop connections to its public IP back to the originating PC.
-            var own = _sharing.Active.FirstOrDefault(s => s.Link.AbsoluteUri == ReceiveUrl.Text.Trim());
-            var link = own is null ? ReceiveUrl.Text : new UriBuilder(own.Link)
+            var address = ShareLinks.DirectAddress(ReceiveUrl.Text);
+            var own = _sharing.Active.FirstOrDefault(s => s.Link.AbsoluteUri == address);
+            var link = own is null ? address : new UriBuilder(own.Link)
                 { Host = "127.0.0.1", Port = _sharing.LocalPort ?? _settings.Port }.Uri.AbsoluteUri;
             _receiver = new ReceiveClient(link);
             var data = await _receiver.InspectAsync(token);
@@ -65,7 +66,7 @@ public partial class MainWindow
             Filter = item is null ? "Archive ZIP (*.zip)|*.zip" : "Tous les fichiers (*.*)|*.*",
             AddExtension = item is null, OverwritePrompt = true
         };
-        if (dialog.ShowDialog(this) != true) return;
+        if (!SelectFile(dialog)) return;
         var overwrite = System.IO.File.Exists(dialog.FileName);
         await ReceiveWork(async token =>
         {

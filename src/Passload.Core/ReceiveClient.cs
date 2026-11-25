@@ -19,7 +19,7 @@ public sealed partial class ReceiveClient : IDisposable
 
     public ReceiveClient(string link)
     {
-        if (!Uri.TryCreate(link.Trim(), UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
+        if (!Uri.TryCreate(ShareLinks.DirectAddress(link), UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.UserInfo.Length != 0 || uri.Query.Length != 0 || !SharePath().IsMatch(uri.AbsolutePath) ||
             Fingerprint().Match(uri.Fragment) is not { Success: true } match)
             throw new FormatException("Collez le lien Passload complet, y compris la partie #sha256= à la fin.");

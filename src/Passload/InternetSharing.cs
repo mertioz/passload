@@ -1,5 +1,4 @@
 using System.IO;
-using System.Net;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Windows.Controls;
@@ -9,9 +8,8 @@ using Passload.Core;
 
 namespace Passload;
 
-internal sealed class InternetSharing(Grid container, ShareService publicShares, DownloadHistory history) : IAsyncDisposable
+internal sealed class InternetSharing(Grid container, ShareService publicShares) : IAsyncDisposable
 {
-    private readonly ShareCatalog _catalog = new(history);
     private readonly Dictionary<string, TaskCompletionSource> _starting = new();
     private readonly HashSet<string> _offline = new();
     private readonly HashSet<string> _publicSessions = new();
@@ -21,10 +19,9 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
     private Uri? _engine;
     private bool _booted;
     private DateTimeOffset? _idleSince;
-    public Share[] Active => _catalog.Active.Where(s => !IsStarting(s.Token)).ToArray();
     public bool IsStarting(string token) => _starting.ContainsKey(token);
     public bool IsOffline(string token) => _offline.Contains(token);
-    public static Uri Viewer { get; } = ReadViewer();
+    private static Uri LegacyViewer { get; } = ReadViewer();
 
     private static Uri ReadViewer()
     {
@@ -34,67 +31,39 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
         return new Uri("https://mertioz.github.io/passload/recevoir/");
     }
 
-    public static bool IsBrowserLink(string text, out Uri? uri) =>
-        Uri.TryCreate(text.Trim(), UriKind.Absolute, out uri) && uri.Scheme == Viewer.Scheme &&
-        uri.Authority == Viewer.Authority && uri.UserInfo.Length == 0 && uri.Query.Length == 0 &&
-        uri.AbsolutePath.TrimEnd('/') == Viewer.AbsolutePath.TrimEnd('/') &&
+    public static bool IsLegacyLink(string text, out Uri? uri) =>
+        Uri.TryCreate(text.Trim(), UriKind.Absolute, out uri) && uri.Scheme == LegacyViewer.Scheme &&
+        uri.Authority == LegacyViewer.Authority && uri.UserInfo.Length == 0 && uri.Query.Length == 0 &&
+        uri.AbsolutePath.TrimEnd('/') == LegacyViewer.AbsolutePath.TrimEnd('/') &&
         Regex.IsMatch(uri.Fragment, @"^#p2\.[A-Za-z0-9_-]{87}\.[A-Za-z0-9_-]{43}\.\d{10,13}$");
-
-    public async Task<Share> CreateAsync(string[] paths, TimeSpan duration, bool allowRelay, CancellationToken stop)
-    {
-        var files = await Task.Run(() => SharedFile.Select(paths), stop);
-        stop.ThrowIfCancellationRequested();
-        var invitation = InternetInvitation.Create(Viewer,duration);
-        var share = _catalog.Add(files, duration, ShareScope.Internet, Viewer, "", "WebRTC sans redirection", publicLink:invitation.Link);
-        try
-        {
-            await StartSessionAsync(share.Token, invitation.StartMessage(share.Token,allowRelay), stop);
-            return share;
-        }
-        catch
-        {
-            Revoke(share.Token);
-            throw;
-        }
-    }
 
     public async Task PreparePublicAsync(Share share, CancellationToken stop)
     {
+        _idleSince = null;
         _publicSessions.Add(share.Token);
+        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _starting.Add(share.Token, connected);
         try
         {
-            await StartSessionAsync(share.Token,
-                new { op = "start", token = share.Token, until = share.ExpiresAt.ToUnixTimeMilliseconds(), publicRtc = true }, stop);
+            await EnsureEngineAsync(stop);
+            stop.ThrowIfCancellationRequested();
+            Post(share.WebRtcStartMessage(sharedPage: false));
+            Post(share.WebRtcStartMessage(sharedPage: true));
+            await connected.Task.WaitAsync(TimeSpan.FromSeconds(17), stop);
         }
         catch (Exception) when (!stop.IsCancellationRequested)
         {
             RemovePublic(share.Token);
             _offline.Add(share.Token);
         }
-    }
-
-    private async Task StartSessionAsync(string token, object message, CancellationToken stop)
-    {
-        _idleSince = null;
-        var connected = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
-        _starting.Add(token, connected);
-        try
-        {
-            await EnsureEngineAsync(stop);
-            stop.ThrowIfCancellationRequested();
-            Post(message);
-            await connected.Task.WaitAsync(TimeSpan.FromSeconds(17), stop);
-        }
-        finally { _starting.Remove(token); }
+        finally { _starting.Remove(share.Token); }
     }
 
     public Uri? PublicPreview(Share share) => share.UsesPublicWebRtc && _source is not null
         ? new Uri($"http://127.0.0.1:{_source.Port}/s/{share.Token}") : null;
 
-    public async Task<Uri> ReaderUriAsync(Uri invitation, CancellationToken stop)
+    public async Task<Uri> LegacyReaderUriAsync(Uri invitation, CancellationToken stop)
     {
-        var own = _catalog.Active.FirstOrDefault(s => s.Link.AbsoluteUri == invitation.AbsoluteUri);
-        if (own is not null && _source is not null) return new Uri($"http://127.0.0.1:{_source.Port}/s/{own.Token}");
         var start = _reader ??= TransferServer.StartAsync(new ShareCatalog(), 0, [], loopbackOnly:true, cancellation:stop, browserEngine:true);
         try
         {
@@ -108,7 +77,7 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
     {
         if (_booted) return;
         await ReleaseEngineAsync();
-        _source = await TransferServer.StartAsync(_catalog, 0, [], loopbackOnly:true, cancellation:stop, browserEngine:true,
+        _source = await TransferServer.StartAsync(new ShareCatalog(), 0, [], loopbackOnly:true, cancellation:stop, browserEngine:true,
             publicShares:publicShares.FindPublicWebRtc);
         _engine = new Uri($"http://127.0.0.1:{_source.Port}/engine/host");
         var view = new WebView2 {Width=1, Height=1, HorizontalAlignment=System.Windows.HorizontalAlignment.Left, IsHitTestVisible=false, Focusable=false};
@@ -145,9 +114,9 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
                     case "online": _offline.Remove(token); if (_starting.TryGetValue(token, out var begin)) begin.TrySetResult(); break;
                     case "offline": _offline.Add(token); break;
                     case "download":
-                        var share = _catalog.Find(token) ?? publicShares.FindPublicWebRtc(token);
+                        var share = publicShares.FindPublicWebRtc(token);
                         if (share is not null && msg.TryGetProperty("file", out var file) && file.TryGetInt32(out var id))
-                            share.RecordWebRtcDownload(id, msg.GetProperty("address").GetString(), msg.GetProperty("relayed").GetBoolean());
+                            share.RecordWebRtcDownload(id, msg.GetProperty("address").GetString(), relayed: false);
                         break;
                     case "failed":
                         if (_starting.TryGetValue(token, out var failure)) failure.TrySetException(new IOException(msg.GetProperty("detail").GetString()));
@@ -164,7 +133,6 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
                 foreach (var waiter in _starting.Values) waiter.TrySetException(error);
                 _offline.UnionWith(_publicSessions);
                 _publicSessions.Clear();
-                _catalog.EndAll();
             };
             core.Navigate(_engine.AbsoluteUri);
             await started.Task.WaitAsync(TimeSpan.FromSeconds(18), stop);
@@ -179,12 +147,6 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
     }
 
     private void Post(object message) => _view?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message));
-    public void Revoke(string token)
-    {
-        _catalog.Revoke(token);
-        _offline.Remove(token);
-        if (_booted) Post(new {op="stop", token});
-    }
     public void RemovePublic(string token)
     {
         _offline.Remove(token);
@@ -193,13 +155,11 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
 
     public async Task CollectAsync(bool creating)
     {
-        _catalog.Collect();
         foreach (var token in _publicSessions.Where(token => publicShares.FindPublicWebRtc(token) is null).ToArray())
             RemovePublic(token);
-        var local = _catalog.Active;
         if (_offline.Count != 0)
-            _offline.IntersectWith(local.Concat(publicShares.Active).Select(s => s.Token));
-        if (creating || _view is null || local.Length != 0 || _publicSessions.Count != 0) { _idleSince = null; return; }
+            _offline.IntersectWith(publicShares.Active.Select(s => s.Token));
+        if (creating || _view is null || _publicSessions.Count != 0) { _idleSince = null; return; }
         _idleSince ??= DateTimeOffset.UtcNow;
         if (DateTimeOffset.UtcNow - _idleSince > TimeSpan.FromSeconds(15)) await ReleaseEngineAsync();
     }
@@ -216,7 +176,6 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares,
     }
     public async ValueTask DisposeAsync()
     {
-        _catalog.EndAll();
         await ReleaseEngineAsync();
         if (_reader is { } start && !start.IsFaulted && !start.IsCanceled)
         {
