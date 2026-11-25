@@ -11,6 +11,7 @@ using Microsoft.AspNetCore.Hosting.Server;
 using Microsoft.AspNetCore.Hosting.Server.Features;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.AspNetCore.Server.Kestrel.Core;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Net.Http.Headers;
@@ -21,26 +22,40 @@ public sealed class TransferServer : IAsyncDisposable
 {
     private readonly WebApplication _app;
     private readonly X509Certificate2? _certificate;
+    private readonly X509Certificate2Collection? _intermediates;
     private static readonly string Template = LoadTemplate();
     public string Fingerprint => _certificate?.GetCertHashString(HashAlgorithmName.SHA256) ?? "";
+    internal DateTimeOffset? CertificateExpiry => _certificate is null ? null : new DateTimeOffset(_certificate.NotAfter);
     public int Port { get; }
 
-    private TransferServer(WebApplication app, X509Certificate2? certificate)
+    private TransferServer(WebApplication app, X509Certificate2? certificate, X509Certificate2Collection? intermediates)
     {
         _app = app;
         _certificate = certificate;
+        _intermediates = intermediates;
         var addresses = app.Services.GetRequiredService<IServer>().Features.Get<IServerAddressesFeature>()!.Addresses;
         Port = new Uri(addresses.Single()).Port;
     }
 
     public static async Task<TransferServer> StartAsync(ShareCatalog catalog, int port, IEnumerable<IPAddress> addresses,
         bool loopbackOnly = false, CancellationToken cancellation = default, bool browserEngine = false,
-        Func<string, Share?>? publicShares = null)
+        Func<string, Share?>? publicShares = null, string? trustedHost = null, TimeSpan duration = default)
     {
         if (browserEngine && !loopbackOnly) throw new ArgumentException("Le moteur du navigateur doit rester sur la boucle locale.");
-        var certificate = browserEngine ? null : LocalIdentity.Create(addresses);
+        X509Certificate2? certificate = null;
+        X509Certificate2Collection? intermediates = null;
+        if (!browserEngine)
+        {
+            if (trustedHost is null) certificate = LocalIdentity.Create(addresses);
+            else (certificate, intermediates) = LocalIdentity.Trusted(trustedHost, DateTimeOffset.UtcNow.Add(duration));
+        }
         var builder = WebApplication.CreateSlimBuilder(new WebApplicationOptions { Args = [], ContentRootPath = AppContext.BaseDirectory });
         builder.Logging.ClearProviders();
+        void WithTls(ListenOptions endpoint) => endpoint.UseHttps(https =>
+        {
+            https.ServerCertificate = certificate;
+            https.ServerCertificateChain = intermediates;
+        });
         builder.WebHost.ConfigureKestrel(server =>
         {
             server.AddServerHeader = false;
@@ -48,8 +63,8 @@ public sealed class TransferServer : IAsyncDisposable
             server.Limits.MaxRequestBodySize = 0;
             server.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(12);
             if (browserEngine) server.Listen(IPAddress.Loopback, port);
-            else if (loopbackOnly) server.Listen(IPAddress.Loopback, port, endpoint => endpoint.UseHttps(certificate!));
-            else server.ListenAnyIP(port, endpoint => endpoint.UseHttps(certificate!));
+            else if (loopbackOnly) server.Listen(IPAddress.Loopback, port, WithTls);
+            else server.ListenAnyIP(port, WithTls);
         });
         var app = builder.Build();
         app.UseWebSockets(new WebSocketOptions { KeepAliveInterval = TimeSpan.FromSeconds(20) });
@@ -58,12 +73,14 @@ public sealed class TransferServer : IAsyncDisposable
         try
         {
             await app.StartAsync(cancellation).ConfigureAwait(false);
-            return new TransferServer(app, certificate);
+            return new TransferServer(app, certificate, intermediates);
         }
         catch
         {
             await app.DisposeAsync().ConfigureAwait(false);
             certificate?.Dispose();
+            if (intermediates is not null)
+                foreach (var intermediate in intermediates) intermediate.Dispose();
             throw;
         }
     }
@@ -315,6 +332,8 @@ public sealed class TransferServer : IAsyncDisposable
         {
             await _app.DisposeAsync().ConfigureAwait(false);
             _certificate?.Dispose();
+            if (_intermediates is not null)
+                foreach (var intermediate in _intermediates) intermediate.Dispose();
         }
     }
 }

@@ -16,36 +16,33 @@ public sealed class DownloadHistory
     private readonly object _lock = new();
     private readonly List<DownloadRecord> _records = [];
     private readonly string? _path;
+    private readonly string? _previousPath;
+    private List<DownloadRecord> _previous = [];
+    private (long Size, DateTime Timestamp)? _previousStamp;
     private bool _needsRewrite;
     private int _writesSinceRewrite = RewriteInterval;
     private long _revision;
-    public long Revision => Interlocked.Read(ref _revision);
+    public long Revision
+    {
+        get
+        {
+            lock (_lock)
+            {
+                RefreshPrevious();
+                return _revision;
+            }
+        }
+    }
     public bool PersistenceUnavailable { get; private set; }
 
-    public DownloadHistory(string? path = null)
+    public DownloadHistory(string? path = null, string? previousPath = null)
     {
         _path = path is null ? null : Path.GetFullPath(path);
+        _previousPath = previousPath is null ? null : Path.GetFullPath(previousPath);
         if (_path is null || !File.Exists(_path)) return;
         try
         {
-            var cutoff = DateTimeOffset.UtcNow - Retention;
-            foreach (var line in File.ReadLines(_path))
-            {
-                if (string.IsNullOrWhiteSpace(line)) continue;
-                try
-                {
-                    var entry = JsonSerializer.Deserialize<DownloadRecord>(line);
-                    if (entry is not null && entry.At >= cutoff && !string.IsNullOrWhiteSpace(entry.FileName))
-                        _records.Add(entry);
-                    else _needsRewrite = true;
-                }
-                catch (JsonException) { _needsRewrite = true; }
-                if (_records.Count > Limit)
-                {
-                    _records.RemoveAt(0);
-                    _needsRewrite = true;
-                }
-            }
+            _needsRewrite = ReadLog(_path, _records);
             if (_needsRewrite) Rewrite();
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { PersistenceUnavailable = true; }
@@ -54,7 +51,54 @@ public sealed class DownloadHistory
     public DownloadRecord[] Recent()
     {
         var cutoff = DateTimeOffset.UtcNow - Retention;
-        lock (_lock) return _records.Where(item => item.At >= cutoff).Reverse().ToArray();
+        lock (_lock)
+        {
+            RefreshPrevious();
+            return _records.Concat(_previous).Where(item => item.At >= cutoff).OrderByDescending(item => item.At).Take(Limit).ToArray();
+        }
+    }
+
+    private void RefreshPrevious()
+    {
+        if (_previousPath is null) return;
+        try
+        {
+            var file = new FileInfo(_previousPath);
+            (long, DateTime)? stamp = file.Exists ? (file.Length, file.LastWriteTimeUtc) : null;
+            if (stamp == _previousStamp) return;
+            // A previous Passload version can still be serving links. Its log stays read-only here.
+            var next = new List<DownloadRecord>();
+            if (stamp is not null) ReadLog(file.FullName, next);
+            _previous = next;
+            _previousStamp = stamp;
+            _revision++;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
+    }
+
+    private static bool ReadLog(string path, List<DownloadRecord> records)
+    {
+        var changed = false;
+        var cutoff = DateTimeOffset.UtcNow - Retention;
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var reader = new StreamReader(stream);
+        while (reader.ReadLine() is { } line)
+        {
+            if (string.IsNullOrWhiteSpace(line)) continue;
+            try
+            {
+                var entry = JsonSerializer.Deserialize<DownloadRecord>(line);
+                if (entry is not null && entry.At >= cutoff && !string.IsNullOrWhiteSpace(entry.FileName)) records.Add(entry);
+                else changed = true;
+            }
+            catch (JsonException) { changed = true; }
+            if (records.Count > Limit)
+            {
+                records.RemoveAt(0);
+                changed = true;
+            }
+        }
+        return changed;
     }
 
     internal void Record(DownloadRecord entry)

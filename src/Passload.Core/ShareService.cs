@@ -8,6 +8,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
     private readonly ShareCatalog _catalog = new(history);
     private TransferServer? _server;
     private int _preferredPort;
+    private string? _publicHost;
     private RouterLease? _lease;
     private bool _closed;
     public Share[] Active => _catalog.Active;
@@ -18,25 +19,36 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
 
     public async Task<Share> CreateAsync(IEnumerable<string> paths, TimeSpan duration, ShareScope scope, int port,
         string? manualAddress, CancellationToken cancellation = default, Func<int, CancellationToken, Task>? authorizeInbound = null,
-        bool publicWebRtc = false)
+        bool publicWebRtc = false, string? publicHost = null)
     {
+        publicHost = NetworkInfo.NormalizePublicHost(publicHost);
         var files = await Task.Run(() => SharedFile.Select(paths), cancellation).ConfigureAwait(false);
         var network = NetworkInfo.Read();
         await _gate.WaitAsync(cancellation).ConfigureAwait(false);
         try
         {
             ObjectDisposedException.ThrowIf(_closed, this);
-            if (_server is not null && _preferredPort != port) throw new InvalidOperationException("Arrêtez les partages actifs avant de changer de port.");
+            if (_server is not null && (_preferredPort != port || _publicHost != publicHost))
+                throw new InvalidOperationException("Arrêtez les partages actifs avant de modifier les paramètres du serveur.");
             if (_server is null)
             {
-                _server = await StartServerAsync(port, network, string.IsNullOrWhiteSpace(manualAddress), cancellation).ConfigureAwait(false);
+                _server = await StartServerAsync(port, network, string.IsNullOrWhiteSpace(manualAddress), publicHost, duration, cancellation)
+                    .ConfigureAwait(false);
                 _preferredPort = port;
+                _publicHost = publicHost;
             }
             var actualPort = _server.Port;
             var route = await RouteAsync(network, scope, actualPort, manualAddress, cancellation).ConfigureAwait(false);
+            var trustedHttps = scope == ShareScope.Internet && publicHost is not null;
+            var origin = trustedHttps
+                ? await NetworkInfo.BindPublicHostAsync(route.Origin, publicHost!, cancellation).ConfigureAwait(false)
+                : route.Origin;
             if (authorizeInbound is not null) await authorizeInbound(actualPort, cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
-            return _catalog.Add(files, duration, scope, route.Origin, _server.Fingerprint, route.Label, route.Mapped, publicWebRtc: publicWebRtc);
+            if (publicHost is not null && _server.CertificateExpiry <= DateTimeOffset.UtcNow.Add(duration))
+                throw new InvalidOperationException("Le certificat HTTPS expire avant la fin de ce partage. Renouvelez-le ou choisissez une durée plus courte.");
+            return _catalog.Add(files, duration, scope, origin, _server.Fingerprint, route.Label, route.Mapped,
+                publicWebRtc: publicWebRtc, trustedHttps: trustedHttps);
         }
         catch
         {
@@ -46,17 +58,20 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
         finally { _gate.Release(); }
     }
 
-    private async Task<TransferServer> StartServerAsync(int port, NetworkInfo network, bool mayChoosePort, CancellationToken cancellation)
+    private async Task<TransferServer> StartServerAsync(int port, NetworkInfo network, bool mayChoosePort, string? publicHost,
+        TimeSpan duration, CancellationToken cancellation)
     {
+        Task<TransferServer> Listen(int value) => TransferServer.StartAsync(_catalog, value, network.Addresses,
+            cancellation: cancellation, trustedHost: publicHost, duration: duration);
         try
         {
             try
             {
-                return await TransferServer.StartAsync(_catalog, port, network.Addresses, cancellation: cancellation).ConfigureAwait(false);
+                return await Listen(port).ConfigureAwait(false);
             }
             catch (IOException ex) when (mayChoosePort && ex.InnerException is AddressInUseException)
             {
-                return await TransferServer.StartAsync(_catalog, 0, network.Addresses, cancellation: cancellation).ConfigureAwait(false);
+                return await Listen(0).ConfigureAwait(false);
             }
         }
         catch (IOException ex)

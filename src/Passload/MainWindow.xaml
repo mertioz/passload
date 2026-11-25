@@ -85,6 +85,9 @@
        <StackPanel><TextBlock Text="Port TCP" Style="{StaticResource Hint}"/><TextBox x:Name="PortInput" Margin="0,4,0,0" AutomationProperties.Name="Port TCP du PC"/></StackPanel>
        <StackPanel Grid.Column="2"><TextBlock Text="Adresse publique manuelle" Style="{StaticResource Hint}"/><TextBox x:Name="ManualInput" Margin="0,4,0,0" AutomationProperties.Name="Adresse publique manuelle"/></StackPanel>
       </Grid>
+      <TextBlock Text="Nom de domaine pour le certificat HTTPS" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
+      <TextBox x:Name="PublicHostInput" Margin="0,0,0,10" AutomationProperties.Name="Nom de domaine pour le certificat HTTPS"
+       ToolTip="Nom couvert par un certificat valide installé dans Windows. Laissez ce champ vide pour les liens par adresse IP."/>
       <WrapPanel><Button Content="Enregistrer" Click="SaveNetwork" Margin="0,0,6,4"/><Button Content="Autoriser dans le pare-feu" Click="RequestFirewall" Margin="0,0,0,4"/></WrapPanel>
      </StackPanel></Expander>
      <Button Content="Licences du logiciel" Style="{StaticResource TextAction}" Click="ShowLicenses" HorizontalAlignment="Left" Margin="0,16,0,0"/>

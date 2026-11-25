@@ -42,6 +42,10 @@ Le mode principal nécessite une adresse IP publique joignable. Un opérateur ou
 
 Les liens par adresse IP utilisent un certificat créé sur le PC. **Recevoir** vérifie l’empreinte SHA-256 pour télécharger en HTTPS dans l’application. Si le navigateur signale un certificat inconnu, comparez son empreinte à la valeur `#sha256=` du lien reçu avant de poursuivre. Les téléchargements individuels HTTPS acceptent les requêtes de reprise.
 
+Pour proposer un lien dont le certificat est reconnu par les navigateurs, renseignez **Nom de domaine pour le certificat HTTPS** dans **Connexion → Réglages avancés**. Le DNS du domaine doit pointer directement vers votre adresse publique et le magasin personnel de votre utilisateur Windows doit contenir un certificat SSL serveur valide avec sa clé privée. Les nouveaux liens utilisent ce domaine avec le port accordé par la box. Le PC continue de servir les fichiers.
+
+Vous pouvez obtenir le certificat d’un domaine via une validation DNS, y compris lorsque votre box refuse les ports 80 et 443. Lors d’un renouvellement, installez le nouveau certificat dans le même magasin. Passload le sélectionne la prochaine fois qu’il démarre son serveur de partage. [Validation DNS chez Let’s Encrypt](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
+
 ## Autres types de lien
 
 **HTTPS · IP publique** utilise directement HTTPS. **Réseau local** permet de partager avec des appareils connectés au même réseau.

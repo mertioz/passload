@@ -11,7 +11,7 @@ using Passload.Core;
 
 namespace Passload;
 
-internal sealed record Settings(int Port, string Manual)
+internal sealed record Settings(int Port, string Manual, string? PublicHost = null)
 {
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload", "settings.json");
     public static Settings Load()
@@ -22,7 +22,7 @@ internal sealed record Settings(int Port, string Manual)
             if (value is { Port: >= 1024 and <= 65535, Manual: not null })
             {
                 NetworkInfo.ManualOrigin(value.Manual, value.Port);
-                return value;
+                return value with { PublicHost = NetworkInfo.NormalizePublicHost(value.PublicHost) };
             }
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or FormatException) { }
@@ -70,7 +70,7 @@ public partial class MainWindow
             throw new FormatException("Choisissez un port entre 1024 et 65535.");
         var manual = ManualInput.Text.Trim();
         NetworkInfo.ManualOrigin(manual, port);
-        var next = new Settings(port, manual);
+        var next = new Settings(port, manual, NetworkInfo.NormalizePublicHost(PublicHostInput.Text));
         if ((_sharing.Active.Length > 0 || _creating) && next != _settings)
             throw new InvalidOperationException("Arrêtez les partages en cours avant de modifier la connexion.");
         return next;

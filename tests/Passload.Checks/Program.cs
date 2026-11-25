@@ -149,6 +149,10 @@ try
     Check(NetworkInfo.IsPublic(IPAddress.Parse("2606:4700::1")) && !NetworkInfo.IsPublic(IPAddress.Parse("fd00::1")), "distinction IPv6 publique et locale");
     Check(NetworkInfo.ManualOrigin("partage.example", 47831)?.Port == 47831 && NetworkInfo.ManualOrigin("partage.example:443", 47831)?.Port == 443, "domaine manuel et port externe explicite");
     Check(NetworkInfo.ManualOrigin("[2606:4700::1]:5443", 47831)?.Port == 5443, "saisie IPv6 avec port externe");
+    Check(NetworkInfo.NormalizePublicHost("  Démo.Exemple.FR. ") == "xn--dmo-bma.exemple.fr" &&
+        NetworkInfo.NormalizePublicHost("") is null, "normalisation d’un domaine HTTPS facultatif");
+    await Throws<FormatException>(() => Task.Run(() => NetworkInfo.NormalizePublicHost("https://exemple.fr/s")),
+        "une URL complète ne remplace pas le nom du certificat");
     await Throws<FormatException>(() => Task.FromResult(NetworkInfo.ManualOrigin("192.168.0.3", 47831)), "une IPv4 privée ne produit pas de lien Internet");
     var router = new TestRouter(NatProtocol.Upnp);
     var existing = new Mapping(Protocol.Tcp, 47831, 47831, 600, "Autre application");

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.NetworkInformation;
 using System.Net.Sockets;
@@ -76,6 +77,31 @@ public sealed record NetworkInfo(IPAddress? LanAddress, IPAddress? PublicV4, IPA
     }
 
     public static Uri Origin(IPAddress address, int port) => new UriBuilder("https", address.ToString(), port).Uri;
+
+    public static string? NormalizePublicHost(string? input)
+    {
+        if (string.IsNullOrWhiteSpace(input)) return null;
+        const string message = "Indiquez un nom de domaine complet pour le certificat HTTPS.";
+        string host;
+        try { host = new IdnMapping { UseStd3AsciiRules = true }.GetAscii(input.Trim().TrimEnd('.')).ToLowerInvariant(); }
+        catch (ArgumentException) { throw new FormatException(message); }
+        if (!host.Contains('.') || Uri.CheckHostName(host) != UriHostNameType.Dns || host.EndsWith(".local", StringComparison.Ordinal))
+            throw new FormatException(message);
+        return host;
+    }
+
+    internal static async Task<Uri> BindPublicHostAsync(Uri origin, string host, CancellationToken cancellation)
+    {
+        if (origin.IdnHost.Equals(host, StringComparison.OrdinalIgnoreCase)) return origin;
+        if (!IPAddress.TryParse(origin.IdnHost, out var address))
+            throw new InvalidOperationException("L’adresse publique manuelle doit utiliser le même nom de domaine que le certificat HTTPS.");
+        IPAddress[] addresses;
+        try { addresses = await Dns.GetHostAddressesAsync(host, cancellation).ConfigureAwait(false); }
+        catch (SocketException ex) { throw new InvalidOperationException($"Le DNS de {host} est indisponible.", ex); }
+        if (!addresses.Contains(address))
+            throw new InvalidOperationException($"Le DNS de {host} doit pointer vers l’adresse publique de cette connexion.");
+        return new UriBuilder(origin) { Host = host }.Uri;
+    }
 
     public static Uri? ManualOrigin(string? input, int defaultPort)
     {

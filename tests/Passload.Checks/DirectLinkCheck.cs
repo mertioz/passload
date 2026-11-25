@@ -16,15 +16,31 @@ internal static class DirectLinkCheck
         var workflow = Environment.GetEnvironmentVariable("GITHUB_EVENT_PATH")
             ?? throw new InvalidOperationException("Événement GitHub Actions requis.");
         using var payload = JsonDocument.Parse(await File.ReadAllTextAsync(workflow));
-        var probe = payload.RootElement.GetProperty("inputs").GetProperty("probe").GetString();
+        var inputs = payload.RootElement.GetProperty("inputs");
+        var probe = inputs.GetProperty("probe").GetString();
+        var hostname = NetworkInfo.NormalizePublicHost(inputs.TryGetProperty("hostname", out var hostOption) ? hostOption.GetString() : null);
         if (!Guid.TryParseExact(probe, "N", out var channel)) throw new FormatException("Identifiant de test invalide.");
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         var token = timeout.Token;
         using var rendezvous = new HttpClient { Timeout = TimeSpan.FromMinutes(3), MaxResponseContentBufferSize = 4096 };
         var link = (await rendezvous.GetStringAsync($"https://ppng.io/passload-direct-check-{channel:N}", token)).Trim();
-        if (!Uri.TryCreate(link, UriKind.Absolute, out var publicLink) ||
-            !IPAddress.TryParse(publicLink.IdnHost, out var address) || !NetworkInfo.IsPublic(address))
-            throw new InvalidOperationException("Le test attend un lien vers une adresse IP publique.");
+        if (!Uri.TryCreate(link, UriKind.Absolute, out var publicLink) || publicLink.Scheme != Uri.UriSchemeHttps)
+            throw new InvalidOperationException("Le test attend un lien HTTPS.");
+        if (hostname is null)
+        {
+            if (!IPAddress.TryParse(publicLink.IdnHost, out var address) || !NetworkInfo.IsPublic(address))
+                throw new InvalidOperationException("Le test attend un lien vers une adresse IP publique.");
+        }
+        else
+        {
+            if (publicLink.IdnHost != hostname ||
+                !(await Dns.GetHostAddressesAsync(hostname, token)).Any(NetworkInfo.IsPublic))
+                throw new InvalidOperationException("Le test attend le nom DNS public prévu.");
+            using var browser = new HttpClient(new HttpClientHandler { UseProxy = false, AllowAutoRedirect = false });
+            using var page = await browser.GetAsync(publicLink.GetLeftPart(UriPartial.Path), token);
+            page.EnsureSuccessStatusCode();
+            Console.WriteLine("Le nom DNS et la chaîne TLS sont reconnus depuis un autre réseau.");
+        }
 
         using var receiver = new ReceiveClient(link);
         var manifest = await receiver.InspectAsync(token);

@@ -22,4 +22,35 @@ internal static class LocalIdentity
         // Schannel uses a current-user key container, released with the certificate.
         return X509CertificateLoader.LoadPkcs12(generated.Export(X509ContentType.Pfx), null, X509KeyStorageFlags.DefaultKeySet);
     }
+
+    public static (X509Certificate2 Certificate, X509Certificate2Collection Intermediates) Trusted(
+        string host, DateTimeOffset validThrough)
+    {
+        using var store = new X509Store(StoreName.My, StoreLocation.CurrentUser);
+        store.Open(OpenFlags.ReadOnly | OpenFlags.OpenExistingOnly);
+        var candidates = store.Certificates;
+        try
+        {
+            foreach (var certificate in candidates.OrderByDescending(x => x.NotAfter))
+            {
+                if (!certificate.HasPrivateKey || certificate.NotBefore.ToUniversalTime() > DateTime.UtcNow ||
+                    certificate.NotAfter.ToUniversalTime() <= validThrough.UtcDateTime ||
+                    !certificate.MatchesHostname(host, allowWildcards: true, allowCommonName: false))
+                    continue;
+                using var chain = new X509Chain();
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+                if (!chain.Build(certificate)) continue;
+                var intermediates = new X509Certificate2Collection();
+                for (var i = 1; i < chain.ChainElements.Count - 1; i++)
+                    intermediates.Add(new X509Certificate2(chain.ChainElements[i].Certificate));
+                return (new X509Certificate2(certificate), intermediates);
+            }
+        }
+        finally
+        {
+            foreach (var candidate in candidates) candidate.Dispose();
+        }
+        throw new InvalidOperationException($"Windows ne contient pas de certificat HTTPS reconnu pour {host}, valide jusqu’à la fin du partage.");
+    }
 }

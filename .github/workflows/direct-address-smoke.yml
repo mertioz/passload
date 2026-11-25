@@ -7,6 +7,10 @@ on:
         description: Identifiant aléatoire du test
         required: true
         type: string
+      hostname:
+        description: Nom DNS du partage avec certificat public
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -37,6 +41,7 @@ jobs:
         working-directory: tests/browser
         env:
           PASSLOAD_SMOKE_OUTPUT: ${{ runner.temp }}/fixture-link
+          PASSLOAD_SMOKE_HOSTNAME: ${{ inputs.hostname }}
         run: node public-receive.mjs
       - name: Retirer le lien de test
         if: always()

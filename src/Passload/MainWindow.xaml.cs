@@ -28,8 +28,9 @@ public partial class MainWindow : Window
     private static readonly System.Windows.Media.Brush Good = new SolidColorBrush(Color.FromRgb(241, 243, 240));
     private static readonly System.Windows.Media.Brush Alert = new SolidColorBrush(Color.FromRgb(253, 241, 229));
 
-    public MainWindow() : this(new DownloadHistory(Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "Passload", "download-history.jsonl"))) { }
+    private static readonly string AppData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload");
+    public MainWindow() : this(new DownloadHistory(Path.Combine(AppData, "download-history-tls.jsonl"),
+        Path.Combine(AppData, "download-history.jsonl"))) { }
 
     internal MainWindow(DownloadHistory history)
     {
@@ -41,6 +42,7 @@ public partial class MainWindow : Window
         SendNav.IsChecked = true;
         PortInput.Text = _settings.Port.ToString();
         ManualInput.Text = _settings.Manual;
+        PublicHostInput.Text = _settings.PublicHost ?? "";
         RefreshLinks();
         InspectButton.IsEnabled = false;
         _timer.Tick += Tick;
@@ -180,7 +182,7 @@ public partial class MainWindow : Window
         var port = _settings.Port;
         var share = await _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
             scope == ShareScope.Internet ? Firewall.EnsureInboundAsync : null,
-            publicWebRtc: publicRtc);
+            publicWebRtc: publicRtc, publicHost: _settings.PublicHost);
         if (publicRtc) await _internet.PreparePublicAsync(share, _lifetime.Token);
         return share;
     }
@@ -280,7 +282,7 @@ public partial class MainWindow : Window
         box.Children.Add(details);
         if (share.Scope == ShareScope.Local)
             box.Children.Add(new TextBlock { Text = "Lien local. Connectez les deux appareils au même réseau.", Style = (Style)FindResource("Hint") });
-        else if (!InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out _))
+        else if (!share.UsesTrustedHttps && !InternetSharing.IsBrowserLink(share.Link.AbsoluteUri, out _))
             box.Children.Add(new TextBlock { Text = "Si le navigateur signale le certificat du PC, ouvrez le lien dans Recevoir pour vérifier son empreinte.", Style = (Style)FindResource("Hint") });
         return Card(box);
     }

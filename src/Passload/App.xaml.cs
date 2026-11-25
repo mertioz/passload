@@ -26,7 +26,7 @@ public partial class App : Application
             return;
         }
         using var identity = WindowsIdentity.GetCurrent();
-        var scope = @"Local\Passload-" + (identity.User?.Value ?? Environment.UserName);
+        var scope = @"Local\Passload-Tls-" + (identity.User?.Value ?? Environment.UserName);
         _showWindow = new EventWaitHandle(false, EventResetMode.AutoReset, scope + "-show");
         _instance = new Mutex(false, scope + "-instance");
         try { _owner = _instance.WaitOne(0); }

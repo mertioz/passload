@@ -12,7 +12,9 @@ import {chromium, firefox} from "playwright-core";
 const link = new URL(process.env.PASSLOAD_BROWSER_TEST_LINK ??
   await readFile(process.env.PASSLOAD_SMOKE_OUTPUT, "utf8"));
 assert.match(link.pathname, /^\/s\/[A-Za-z0-9_-]{43}$/);
-assert(isIP(link.hostname.replace(/^\[|\]$/g, "")));
+const trustedHost = process.env.PASSLOAD_SMOKE_HOSTNAME?.trim().toLowerCase();
+if (trustedHost) assert.equal(link.hostname, trustedHost);
+else assert(isIP(link.hostname.replace(/^\[|\]$/g, "")));
 const expected = {
   "probe.txt": Buffer.from("Passload direct address smoke test."),
   "probe.bin": Buffer.alloc(1_048_713, Buffer.from(Array.from({length:256}, (_, index) => index))),
@@ -21,7 +23,7 @@ const sha256 = bytes => createHash("sha256").update(bytes);
 const publicAddress = link.protocol === "https:";
 const loopback = link.hostname === "127.0.0.1";
 const args = [];
-if (publicAddress) {
+if (publicAddress && !trustedHost) {
   const fingerprint = link.hash.match(/^#sha256=([0-9a-f]{64})$/i)?.[1]?.toLowerCase();
   assert(fingerprint);
   const pin = await new Promise((resolve, reject) => {
@@ -41,7 +43,7 @@ if (publicAddress) {
     socket.once("timeout", () => socket.destroy(new Error("Connexion HTTPS indisponible.")));
   });
   args.push("--ignore-certificate-errors-spki-list=" + pin);
-} else {
+} else if (!publicAddress) {
   assert(link.protocol === "http:" && link.hostname === "127.0.0.1", "Le test HTTP est réservé à la boucle locale.");
 }
 
@@ -49,7 +51,7 @@ async function testReceiver(browser, name, webRtcBlocked, output) {
   const context = await browser.newContext({
     acceptDownloads:true,
     // The fixture certificate was pinned above. Firefox uses a fresh isolated context.
-    ignoreHTTPSErrors:publicAddress && name === "firefox",
+    ignoreHTTPSErrors:publicAddress && !trustedHost && name === "firefox",
   });
   try {
     if (webRtcBlocked) {

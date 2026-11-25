@@ -78,6 +78,9 @@ internal static class DownloadHistoryCheck
             var contents = await File.ReadAllTextAsync(path);
             check(!contents.Contains(share.Token) && !contents.Contains(directory, StringComparison.OrdinalIgnoreCase),
                 "journal local sans jeton de lien ni chemin des fichiers");
+            var parallel = new DownloadHistory(Path.Combine(directory, "download-new.jsonl"), path);
+            check(parallel.Recent().Length == recovered.Length && await File.ReadAllTextAsync(path) == contents,
+                "historique de la session précédente lu sans modifier son journal");
         }
         finally { catalog.EndAll(); }
     }

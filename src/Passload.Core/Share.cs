@@ -70,6 +70,7 @@ public sealed class Share
     public ShareScope Scope { get; }
     public string RouteLabel { get; }
     public Uri Link { get; }
+    public bool UsesTrustedHttps { get; }
     public bool UsesPublicWebRtc => RtcRoom is not null;
     internal PublicRtcRoom? RtcRoom { get; }
     public bool UsesRouter { get; }
@@ -77,7 +78,8 @@ public sealed class Share
     public long TotalSize { get; }
 
     internal Share(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc, DownloadHistory history)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter, Uri? publicLink, bool publicWebRtc, DownloadHistory history,
+        bool trustedHttps)
     {
         if (files.Count == 0 || duration <= TimeSpan.Zero || duration > TimeSpan.FromDays(7))
             throw new ArgumentOutOfRangeException(nameof(duration));
@@ -90,6 +92,7 @@ public sealed class Share
         Scope = scope;
         RouteLabel = routeLabel;
         UsesRouter = usesRouter;
+        UsesTrustedHttps = trustedHttps;
         RtcRoom = publicWebRtc ? new PublicRtcRoom() : null;
         Link = publicLink ?? new Uri(origin, $"/s/{Token}#sha256={fingerprint}");
     }
@@ -162,9 +165,11 @@ public sealed class ShareCatalog(DownloadHistory? history = null)
     public Share[] Active => _shares.Values.Where(s => s.Active).OrderBy(s => s.ExpiresAt).ToArray();
 
     public Share Add(IReadOnlyList<SharedFile> files, TimeSpan duration, ShareScope scope,
-        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null, bool publicWebRtc = false)
+        Uri origin, string fingerprint, string routeLabel, bool usesRouter = false, Uri? publicLink = null, bool publicWebRtc = false,
+        bool trustedHttps = false)
     {
-        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc, History);
+        var share = new Share(files, duration, scope, origin, fingerprint, routeLabel, usesRouter, publicLink, publicWebRtc, History,
+            trustedHttps);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();
         throw new InvalidOperationException("Impossible de générer un lien unique.");
