@@ -15,11 +15,12 @@ internal static class BrowserFixture
         try
         {
             await using var server = await TransferServer.StartAsync(catalog,0,[],loopbackOnly:true,browserEngine:true);
+            await using var https = publicWebRtc ? await TransferServer.StartAsync(catalog, 0, [], loopbackOnly:true) : null;
             var duration = TimeSpan.FromMinutes(9);
             var origin = new Uri($"http://127.0.0.1:{server.Port}");
-            var viewer = publicWebRtc ? origin : new Uri("https://mertioz.github.io/passload/recevoir/");
+            var viewer = https is not null ? new Uri($"https://127.0.0.1:{https.Port}") : new Uri("https://mertioz.github.io/passload/recevoir/");
             var invite = publicWebRtc ? null : InternetInvitation.Create(viewer, duration);
-            var share = catalog.Add(files, duration, ShareScope.Internet, viewer, "", "Internet",
+            var share = catalog.Add(files, duration, ShareScope.Internet, viewer, https?.Fingerprint ?? "", "Internet",
                 publicLink:invite?.Link, publicWebRtc:publicWebRtc);
             var message = invite?.StartMessage(share.Token, true) ??
                 new { op = "start", token = share.Token, until = share.ExpiresAt.ToUnixTimeMilliseconds(), publicRtc = true };

@@ -18,7 +18,7 @@ async function connect() {
     show("Téléchargement HTTPS direct.");
   });
   try {
-    await client.connect(false, 8_000);
+    await client.connect(false, 14_000);
     show("Connexion WebRTC directe.");
     return true;
   } catch {

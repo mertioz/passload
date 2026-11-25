@@ -28,7 +28,7 @@ jobs:
         working-directory: tests/browser
         run: |
           npm ci --no-audit --no-fund
-          npx --no-install playwright-core install --with-deps chromium
+          npx --no-install playwright-core install --with-deps chromium firefox
       - name: Vérifier HTTPS et le contenu
         env:
           PASSLOAD_SMOKE_OUTPUT: ${{ runner.temp }}/fixture-link
