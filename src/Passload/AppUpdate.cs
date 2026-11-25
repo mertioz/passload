@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Net.Http;
 using System.Net.Http.Json;
@@ -19,6 +20,7 @@ internal static class AppUpdate
     private static readonly HttpClient Http = new() { Timeout = TimeSpan.FromSeconds(30) };
     private static string Folder => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload", "updates");
     public static Version Version { get; } = Assembly.GetExecutingAssembly().GetName().Version!;
+    [UnconditionalSuppressMessage("SingleFile", "IL3000", Justification = "An empty location identifies the bundled executable that can update itself.")]
     public static bool Available => Assembly.GetExecutingAssembly().Location.Length == 0;
 
     static AppUpdate() => Http.DefaultRequestHeaders.UserAgent.ParseAdd("Passload/" + Version.ToString(3));
