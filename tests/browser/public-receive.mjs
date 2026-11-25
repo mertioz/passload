@@ -55,15 +55,52 @@ try {
       } else {
         // The browser cannot pass this check by falling back to the HTTPS attachments.
         await context.route(/\/(?:files\/\d+|all\.zip)$/, route => route.abort());
+        await context.addInitScript(() => {
+          const Native = window.RTCPeerConnection;
+          window.rtcProbe = { candidates:[], remote:[], iceErrors:[], state:[] };
+          window.RTCPeerConnection = class extends Native {
+            constructor(configuration) {
+              super(configuration);
+              this.addEventListener("icecandidate", ({candidate}) => {
+                if (candidate) window.rtcProbe.candidates.push(candidate.type + "/" + candidate.protocol);
+              });
+              this.addEventListener("icecandidateerror", ({errorCode}) => window.rtcProbe.iceErrors.push(errorCode));
+              this.addEventListener("iceconnectionstatechange", () => window.rtcProbe.state.push(this.iceConnectionState));
+            }
+            setRemoteDescription(description) {
+              window.rtcProbe.remote.push(...[...description.sdp.matchAll(/ typ ([a-z]+)/g)].map(m => m[1]));
+              return super.setRemoteDescription(description);
+            }
+            addIceCandidate(candidate) {
+              if (candidate?.candidate) window.rtcProbe.remote.push(candidate.candidate.match(/ typ ([a-z]+)/)?.[1] ?? "unknown");
+              return super.addIceCandidate(candidate);
+            }
+          };
+        });
       }
       const page = await context.newPage();
       page.on("pageerror", error => console.log("Erreur JavaScript · " + error.name));
+      const signalling = [];
+      page.on("websocket", socket => {
+        socket.on("framereceived", ({payload}) => {
+          if (typeof payload !== "string" || signalling.length >= 25) return;
+          try {
+            const { op, signal } = JSON.parse(payload);
+            signalling.push(signal?.sdp?.type ?? (signal?.ice ? "ice" : signal?.used ?? op));
+          } catch { signalling.push("invalid"); }
+        });
+        socket.on("socketerror", error => signalling.push(error.match(/\b[45]\d\d\b/)?.[0] ?? "socketerror"));
+      });
       await page.goto(link.href, {waitUntil:"domcontentloaded"}).catch(() => {
         throw new Error("La page du PC expéditeur est inaccessible.");
       });
       const status = webRtcBlocked ? "Téléchargement HTTPS direct." : "Connexion WebRTC directe.";
       await page.waitForFunction(value => document.getElementById("status")?.textContent === value, status, {timeout:25_000})
-        .catch(async () => { throw new Error("Statut reçu · " + await page.locator("#status").textContent()); });
+        .catch(async () => {
+          console.log("Signalisation · " + JSON.stringify(signalling));
+          console.log("ICE · " + JSON.stringify(await page.evaluate(() => window.rtcProbe)));
+          throw new Error("Statut reçu · " + await page.locator("#status").textContent());
+        });
       for (const file of ["probe.txt", "Passload.zip"]) {
         const action = page.getByRole("link", {name:file.endsWith(".zip") ? "Tout télécharger en ZIP" : "Télécharger " + file, exact:true});
         const [download] = await Promise.all([page.waitForEvent("download", {timeout:25_000}), action.click()])
