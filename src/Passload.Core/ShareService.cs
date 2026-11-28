@@ -19,7 +19,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
 
     public async Task<Share> CreateAsync(IEnumerable<string> paths, TimeSpan duration, ShareScope scope, int port,
         string? manualAddress, CancellationToken cancellation = default, Func<int, CancellationToken, Task>? authorizeInbound = null,
-        bool publicWebRtc = false, string? publicHost = null)
+        bool publicWebRtc = false, string? publicHost = null, ShareDetails? details = null)
     {
         publicHost = NetworkInfo.NormalizePublicHost(publicHost);
         var files = await Task.Run(() => SharedFile.Select(paths), cancellation).ConfigureAwait(false);
@@ -48,7 +48,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
             if (publicHost is not null && _server.CertificateExpiry <= DateTimeOffset.UtcNow.Add(duration))
                 throw new InvalidOperationException("Le certificat HTTPS expire avant la fin de ce partage. Renouvelez-le ou choisissez une durée plus courte.");
             return _catalog.Add(files, duration, scope, origin, _server.Fingerprint, route.Label, route.Mapped,
-                publicWebRtc: publicWebRtc, trustedHttps: trustedHttps);
+                publicWebRtc: publicWebRtc, trustedHttps: trustedHttps, details: details);
         }
         catch
         {
@@ -86,7 +86,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
         if (scope == ShareScope.Local)
         {
             var lan = network.LanAddress ?? throw new InvalidOperationException("Connectez le PC à un réseau Wi-Fi ou Ethernet pour créer un lien local.");
-            return (NetworkInfo.Origin(lan, port), "Réseau local", false);
+            return (NetworkInfo.Origin(lan, port), "Réseau privé", false);
         }
         if (NetworkInfo.ManualOrigin(manualAddress, port) is { } manual) return (manual, "Adresse manuelle", false);
         if (network.PublicV4 is { } v4) return (NetworkInfo.Origin(v4, port), "IPv4 directe", false);
@@ -101,7 +101,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
             RouterFailure.PortRejected => "La box répond, mais refuse la redirection temporaire.",
             _ => "Aucun routeur compatible UPnP ou NAT-PMP n’a répondu."
         };
-        throw new InvalidOperationException($"{detail} Vérifiez la redirection de port dans Connexion ou choisissez Réseau local pour les appareils sur le même réseau.");
+        throw new InvalidOperationException($"{detail} Vérifiez la redirection de port dans Connexion ou choisissez Réseau privé pour les appareils sur le même réseau.");
     }
 
     public async Task RevokeAsync(string token)

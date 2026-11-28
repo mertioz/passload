@@ -258,11 +258,15 @@ try
         reservation.Listen(1);
         var port = ((IPEndPoint)reservation.LocalEndPoint!).Port;
         await using var service = new ShareService();
-        var local = await service.CreateAsync([file], TimeSpan.FromMinutes(1), ShareScope.Local, port, null);
+        var local = await service.CreateAsync([file], TimeSpan.FromMinutes(1), ShareScope.Local, port, null,
+            details: new ShareDetails("  Dossier de test  ", "  Un aperçu du partage.\nDeuxième ligne.  "));
         Check(service.LocalPort == local.Link.Port && local.Link.Port != port, "port disponible choisi quand le port préféré est occupé");
         reservation.Dispose();
         using var localClient = new ReceiveClient(local.Link.AbsoluteUri);
-        Check((await localClient.InspectAsync(default)).Files.Length == 1, "adresse de l’interface réseau réellement accessible depuis ce PC");
+        var initial = await localClient.InspectAsync(default);
+        Check(initial.Files.Length == 1, "adresse de l’interface réseau réellement accessible depuis ce PC");
+        Check(initial.Name == "Dossier de test" && initial.Description == "Un aperçu du partage.\nDeuxième ligne.",
+            "nom et description visibles dès la création du lien");
         await service.RevokeAsync(local.Token);
         await Throws<HttpRequestException>(() => localClient.InspectAsync(default), "arrêt du serveur après le dernier lien");
         try

@@ -24,7 +24,7 @@ public partial class MainWindow : Window
     private readonly CancellationTokenSource _lifetime = new();
     private Settings _settings = Settings.Load();
     private string? _lastLinks;
-    private bool _creating, _closing, _readyToClose, _maintaining, _choosingFile;
+    private bool _creating, _closing, _readyToClose, _maintaining, _dialogOpen;
     private static readonly System.Windows.Media.Brush Good = new SolidColorBrush(Color.FromRgb(241, 243, 240));
     private static readonly System.Windows.Media.Brush Alert = new SolidColorBrush(Color.FromRgb(253, 241, 229));
 
@@ -73,9 +73,9 @@ public partial class MainWindow : Window
 
     private bool SelectFile(FileDialog dialog)
     {
-        _choosingFile = true;
+        _dialogOpen = true;
         try { return dialog.ShowDialog(this) == true; }
-        finally { _choosingFile = false; }
+        finally { _dialogOpen = false; }
     }
 
     private void DropZoneClick(object sender, MouseButtonEventArgs e) => BrowseFiles(sender, e);
@@ -151,18 +151,18 @@ public partial class MainWindow : Window
         if (_creating || _draft.Count == 0) return;
         _creating = true;
         FileCard.IsEnabled = OptionsCard.IsEnabled = CreateButton.IsEnabled = false;
-        var scope = ConnectionMode.SelectedItem == LocalMode ? ShareScope.Local : ShareScope.Internet;
-        var publicRtc = ConnectionMode.SelectedItem == PublicRtcMode;
+        var scope = ConnectionMode.SelectedItem == PrivateMode ? ShareScope.Local : ShareScope.Internet;
         var minutes = int.Parse((string)((ComboBoxItem)Duration.SelectedItem).Tag);
         CreateButton.Content = scope == ShareScope.Internet ? "Connexion en cours…" : "Création en cours…";
         try
         {
             var files = _draft.Keys.ToArray();
             var duration = TimeSpan.FromMinutes(minutes);
-            _createTask = CreateAddressShareAsync(files, duration, scope, publicRtc);
+            _createTask = CreateAddressShareAsync(files, duration, scope, _draftDetails);
             var share = await _createTask;
             if (_closing) return;
             _draft.Clear();
+            SetDraftDetails(null);
             RefreshLinks();
             LinksNav.IsChecked = true;
             var copied = Copy(share.PublishedLink.AbsoluteUri);
@@ -182,13 +182,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private async Task<Share> CreateAddressShareAsync(string[] files, TimeSpan duration, ShareScope scope, bool publicRtc)
+    private async Task<Share> CreateAddressShareAsync(string[] files, TimeSpan duration, ShareScope scope, ShareDetails? details)
     {
         var port = _settings.Port;
+        var publicNetwork = scope == ShareScope.Internet;
         var share = await _sharing.CreateAsync(files, duration, scope, port, _settings.Manual, _lifetime.Token,
-            scope == ShareScope.Internet ? Firewall.EnsureInboundAsync : null,
-            publicWebRtc: publicRtc, publicHost: _settings.PublicHost);
-        if (publicRtc) await _internet.PreparePublicAsync(share, _lifetime.Token);
+            publicNetwork ? Firewall.EnsureInboundAsync : null,
+            publicWebRtc: publicNetwork, publicHost: _settings.PublicHost, details: details);
+        if (share.UsesPublicWebRtc) await _internet.PreparePublicAsync(share, _lifetime.Token);
         return share;
     }
 

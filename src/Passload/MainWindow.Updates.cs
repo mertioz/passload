@@ -9,6 +9,7 @@ public partial class MainWindow
     private DateTimeOffset _nextUpdateCheck = DateTimeOffset.MaxValue;
     private UpdatePackage? _pendingUpdate;
     private bool _checkingUpdate, _installingUpdate;
+    private bool HasDraft => _draft.Count != 0 || _draftDetails is { Title: not null } or { Description: not null };
 
     internal void StartUpdateChecks(string? startup)
     {
@@ -63,7 +64,7 @@ public partial class MainWindow
                 return;
             }
             _pendingUpdate = update;
-            if (update is not null && (HasWork || _draft.Count != 0))
+            if (update is not null && (HasWork || HasDraft))
                 Notice($"Passload {update.Version.ToString(3)} est prêt à s’installer après les opérations en cours.");
             else if (manual && update is null) Notice($"Passload {AppUpdate.Version.ToString(3)} est à jour.");
         }
@@ -80,7 +81,7 @@ public partial class MainWindow
 
     private async Task ApplyPendingUpdateAsync()
     {
-        if (_closing || _installingUpdate || !IsEnabled || _choosingFile || HasWork || _draft.Count != 0 || _pendingUpdate is not { } update) return;
+        if (_closing || _installingUpdate || !IsEnabled || _dialogOpen || HasWork || HasDraft || _pendingUpdate is not { } update) return;
         _installingUpdate = true;
         IsEnabled = false;
         try

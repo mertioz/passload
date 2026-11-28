@@ -34,7 +34,7 @@ Cet installateur ajoute Passload au menu Démarrer et à **Applications install�
 `Passload-Setup.exe` ajoute Passload au menu Démarrer et à **Applications installées**. `Passload.exe` peut être lancé directement depuis son dossier.
 
 1. Lancez `Passload.exe`. Déposez les fichiers dans la fenêtre ou choisissez **Parcourir les fichiers**.
-2. Choisissez la durée et cliquez sur **Créer le lien**. Le type proposé est **WebRTC · IP publique**. Envoyez l’adresse complète à votre destinataire. Les liens publics commencent par `https://transfer.aymen.site/`.
+2. Choisissez **Réseau public** pour Internet ou **Réseau privé** pour le même réseau, puis la durée. Vous pouvez renseigner **Nom et description** avant de cliquer sur **Créer le lien**. Envoyez l’adresse complète à votre destinataire.
 3. Gardez le PC allumé et connecté, et les fichiers à leur emplacement. Vous pouvez fermer la fenêtre de Passload.
 
 **Liens → Ouvrir ici** ouvre un aperçu sur le PC expéditeur. **Modifier le lien** permet de changer le titre et la description que le destinataire voit sur la page. L’adresse reste utilisable. **Arrêter le partage** interrompt les transferts et désactive le lien. L’expiration met aussi fin au partage.
@@ -57,7 +57,7 @@ Une IP peut être partagée par plusieurs personnes ou changer. Les pages ouvert
 
 Ouvrez le lien complet dans un navigateur récent ou collez-le dans **Recevoir** sur un deuxième PC Windows. Les boutons permettent de choisir un fichier ou **Tout télécharger en ZIP**. Le ZIP est construit au fil de l’envoi et les fichiers homonymes conservent des entrées distinctes.
 
-## WebRTC · IP publique
+## Réseau public
 
 Le lien ouvre la page statique `transfer.aymen.site` en HTTPS. Les appareils utilisent le service public Piping Server pour échanger des messages de connexion chiffrés. STUN aide WebRTC à découvrir les chemins disponibles. Les fichiers passent directement entre les appareils. Si WebRTC est bloqué, le bouton **Ouvrir le téléchargement HTTPS** ouvre la page servie par le PC expéditeur. [WebRTC](https://www.w3.org/TR/webrtc/) · [Piping Server](https://github.com/nwtgck/piping-server)
 
@@ -73,9 +73,9 @@ Pour que le navigateur reconnaisse aussi le certificat du PC, renseignez votre d
 
 Vous pouvez obtenir le certificat d’un domaine via une validation DNS, y compris lorsque votre box refuse les ports 80 et 443. Lors d’un renouvellement, installez le nouveau certificat dans le même magasin. Passload le sélectionne la prochaine fois qu’il démarre son serveur de partage. [Validation DNS chez Let’s Encrypt](https://letsencrypt.org/docs/challenge-types/#dns-01-challenge)
 
-## Autres types de lien
+## Réseau privé
 
-**HTTPS · IP publique** ouvre la page commune puis donne accès au téléchargement HTTPS depuis le PC. **Réseau local** crée un lien utilisable sur le même réseau, avec l’adresse locale de l’expéditeur.
+**Réseau privé** crée un lien HTTPS utilisable sur le même réseau, avec l’adresse locale de l’expéditeur.
 
 L’onglet **Recevoir** ouvre aussi les anciens liens GitHub Pages avec le lecteur intégré à Passload.
 

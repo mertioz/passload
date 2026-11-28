@@ -37,16 +37,17 @@
       </StackPanel>
      </Border>
      <Grid x:Name="OptionsCard" Margin="0,0,0,14">
-      <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="101"/></Grid.ColumnDefinitions>
+      <Grid.ColumnDefinitions><ColumnDefinition Width="200"/><ColumnDefinition/><ColumnDefinition Width="101"/></Grid.ColumnDefinitions>
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
       <TextBlock Text="Type de lien" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
-      <TextBlock Grid.Column="1" Text="Expiration" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
-      <ComboBox x:Name="ConnectionMode" Grid.Row="1" SelectedIndex="0" AutomationProperties.Name="Type de lien" HorizontalAlignment="Left" Width="200">
-       <ComboBoxItem x:Name="PublicRtcMode" Content="WebRTC · IP publique"/>
-       <ComboBoxItem x:Name="DirectMode" Content="HTTPS · IP publique"/>
-       <ComboBoxItem x:Name="LocalMode" Content="Réseau local"/>
+      <TextBlock Grid.Column="2" Text="Expiration" Style="{StaticResource Hint}" Margin="0,0,0,4"/>
+      <ComboBox x:Name="ConnectionMode" Grid.Row="1" SelectedIndex="0" AutomationProperties.Name="Type de lien">
+       <ComboBoxItem Content="Réseau public" ToolTip="Pour partager par Internet"/>
+       <ComboBoxItem x:Name="PrivateMode" Content="Réseau privé" ToolTip="Pour partager sur le même réseau"/>
       </ComboBox>
-      <ComboBox x:Name="Duration" Grid.Row="1" Grid.Column="1" SelectedIndex="1" AutomationProperties.Name="Durée de validité">
+      <Button x:Name="DraftDetailsButton" Grid.Row="1" Grid.Column="1" Content="Nom et description" Click="EditDraftDetails"
+       Style="{StaticResource TextAction}" HorizontalAlignment="Center" VerticalAlignment="Center" Margin="5,0"/>
+      <ComboBox x:Name="Duration" Grid.Row="1" Grid.Column="2" SelectedIndex="1" AutomationProperties.Name="Durée de validité">
        <ComboBoxItem Content="15 min" Tag="15"/><ComboBoxItem Content="1 heure" Tag="60"/><ComboBoxItem Content="24 heures" Tag="1440"/><ComboBoxItem Content="7 jours" Tag="10080"/>
       </ComboBox>
      </Grid>
@@ -75,7 +76,7 @@
     </StackPanel>
     <StackPanel x:Name="NetworkPage" Visibility="Collapsed">
      <TextBlock Text="Connexion" Style="{StaticResource Title}"/>
-     <TextBlock Text="Pour un lien sur l’adresse IP publique, Passload demande une redirection temporaire à la box." Style="{StaticResource Hint}" Margin="0,22,0,0"/>
+     <TextBlock Text="Pour un lien sur le réseau public, Passload demande une redirection temporaire à la box." Style="{StaticResource Hint}" Margin="0,22,0,0"/>
      <Expander Header="Réglages avancés" Margin="0,18,0,0"><StackPanel Margin="3,12,3,0">
       <TextBlock x:Name="LocalAddressText" Style="{StaticResource Hint}"/><TextBlock x:Name="IPv6Text" Style="{StaticResource Hint}" Margin="0,3,0,8"/>
       <WrapPanel><Button Content="Actualiser" Click="RefreshNetwork" Margin="0,0,6,4"/><Button x:Name="RouterButton" Content="Ouvrir ma box" Click="OpenRouter" Margin="0,0,6,4"/></WrapPanel>
