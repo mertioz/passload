@@ -1,5 +1,6 @@
 using System.Drawing;
 using System.Runtime.InteropServices;
+using Passload.Core;
 using Forms = System.Windows.Forms;
 
 namespace Passload;
@@ -17,8 +18,8 @@ internal sealed class ShareTray : IDisposable
     public ShareTray(Action reopen, Action exit)
     {
         _image = Icon.ExtractAssociatedIcon(Environment.ProcessPath!) ?? (Icon)SystemIcons.Application.Clone();
-        _menu.Items.Add("Ouvrir Passload", null, (_, _) => reopen());
-        _menu.Items.Add("Quitter Passload", null, (_, _) => exit());
+        _menu.Items.Add(Locale.Text("OpenPassload"), null, (_, _) => reopen());
+        _menu.Items.Add(Locale.Text("QuitPassload"), null, (_, _) => exit());
         _icon = new Forms.NotifyIcon { Icon = _image, Text = "Passload", ContextMenuStrip = _menu };
         _icon.MouseDoubleClick += (_, args) => { if (args.Button == Forms.MouseButtons.Left) reopen(); };
     }
@@ -32,10 +33,12 @@ internal sealed class ShareTray : IDisposable
             _icon.Visible = false;
             return;
         }
-        _icon.Text = links > 0 ? $"Passload · {links} lien{(links == 1 ? " actif" : "s actifs")}" : "Passload · transfert en cours";
+        _icon.Text = links > 0 ? Locale.Text(links == 1 ? "TrayLinksOne" : "TrayLinksMany", links) : Locale.Text("TrayBusy");
+        _menu.Items[0].Text = Locale.Text("OpenPassload");
+        _menu.Items[1].Text = Locale.Text("QuitPassload");
         if (_icon.Visible) return;
         _icon.Visible = true;
-        _icon.ShowBalloonTip(3500, "Passload continue en arrière-plan", "Double-cliquez sur l’icône près de l’horloge pour rouvrir la fenêtre.",
+        _icon.ShowBalloonTip(3500, Locale.Text("TrayBackground"), Locale.Text("TrayReopenHint"),
             Forms.ToolTipIcon.Info);
     }
 

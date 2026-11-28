@@ -51,6 +51,6 @@ internal static class LocalIdentity
         {
             foreach (var candidate in candidates) candidate.Dispose();
         }
-        throw new InvalidOperationException($"Le magasin personnel ne contient pas de certificat HTTPS reconnu pour {host}, valide jusqu’à la fin du partage.");
+        throw new InvalidOperationException(Locale.Text("NoTrustedCertificate", host));
     }
 }

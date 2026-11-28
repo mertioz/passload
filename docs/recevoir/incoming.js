@@ -1,6 +1,7 @@
+import {text} from "./language.js";
 import {Peer, deadline, deferred, decode, control, asControl} from "./wire.js";
 
-const offline = "Le partage est arrêté, le lien a expiré ou le PC expéditeur est hors ligne.";
+const offline = text("Offline");
 
 export class Incoming {
   constructor(createMeeting, onDrop, show = () => {}) {
@@ -31,17 +32,17 @@ export class Incoming {
     catch { throw new Error(offline); }
     const relay = allowRelay && ready.relay;
     this.canRelay = relay;
-    this.show("Recherche d’une connexion directe…");
+    this.show(text("LookingForDirect"));
     let direct = false;
     if (this.peer.pc && !(forceRelay && relay)) {
       try {
-        await deadline(this.peer.offer(), 6000, "Connexion directe indisponible.");
-        direct = await deadline(this.peer.direct.promise, directTimeout ?? (relay ? 6_000 : 15_000), "Connexion directe indisponible.");
+        await deadline(this.peer.offer(), 6000, text("DirectUnavailable"));
+        direct = await deadline(this.peer.direct.promise, directTimeout ?? (relay ? 6_000 : 15_000), text("DirectUnavailable"));
       } catch { /* Some browsers or networks cannot establish a data channel. */ }
     }
-    if (!direct && !relay) throw new Error("Les réseaux des deux appareils bloquent la connexion directe. Réessayez depuis un autre réseau.");
+    if (!direct && !relay) throw new Error(text("DirectBlocked"));
     const mode = direct ? "direct" : "relay";
-    if (!direct) this.show("Ouverture du relais chiffré…");
+    if (!direct) this.show(text("OpeningRelay"));
     this.mode = mode;
     this.peer.select(mode);
     await socket.signal(ready.peer, {use:mode});
@@ -67,7 +68,7 @@ export class Incoming {
     if (msg.id !== req.id) return;
     if (msg.t === "start") req.started.resolve();
     if (msg.t === "error") {
-      const error = new Error(msg.message || offline);
+      const error = new Error(text("TransferUnavailable"));
       req.started.reject(error); req.batch?.reject(error);
     }
     if (msg.t === "batch" && req.batch) {
@@ -78,7 +79,7 @@ export class Incoming {
     }
   }
   async open(item) {
-    if (this.closed || this.request) throw new Error("Connexion indisponible.");
+    if (this.closed || this.request) throw new Error(text("ConnectionUnavailable"));
     const req = {id:this.nextId++, started:deferred()};
     req.started.promise.catch(() => {});
     this.request = req;
@@ -94,14 +95,14 @@ export class Incoming {
     const confirm = async () => {
       if (!req.complete || req.confirmed || item === "manifest" || this.closed) return;
       req.confirmed = true;
-      await deadline(this.peer.send(control({t:"received", id:req.id})), 2500, "Confirmation indisponible.").catch(() => {});
+      await deadline(this.peer.send(control({t:"received", id:req.id})), 2500, text("ConnectionUnavailable")).catch(() => {});
     };
     return {cancel, confirm, next:async () => {
       if (this.closed || this.request !== req) throw new Error(offline);
       req.parts = []; req.length = 0; req.batch = deferred();
       req.batch.promise.catch(() => {});
       await this.peer.send(control({t:"pull", id:req.id}));
-      const result = await deadline(req.batch.promise, 90_000, "Le transfert a été interrompu.");
+      const result = await deadline(req.batch.promise, 90_000, text("TransferInterrupted"));
       req.parts = []; req.batch = null;
       if (result.done) {
         req.complete = true;
@@ -118,7 +119,7 @@ export class Incoming {
       while (true) {
         const result = await source.next();
         length += result.bytes.length;
-        if (length > 4 * 1024 * 1024) throw new Error("Liste de fichiers trop volumineuse.");
+        if (length > 4 * 1024 * 1024) throw new Error(text("ManifestTooLarge"));
         parts.push(result.bytes);
         if (result.done) break;
       }

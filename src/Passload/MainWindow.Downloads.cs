@@ -25,7 +25,7 @@ public partial class MainWindow
             var files = counts[id];
             var text = CountDownloads(files);
             button.Content = text;
-            AutomationProperties.SetName(button, "Détails des téléchargements · " + text);
+            AutomationProperties.SetName(button, Locale.Text("DownloadDetails") + " · " + text);
         }
     }
 
@@ -35,7 +35,7 @@ public partial class MainWindow
     {
         var header = new TextBlock
         {
-            Text = share?.Name ?? "Historique des téléchargements",
+            Text = share?.Name ?? Locale.Text("DownloadHistory"),
             FontSize = 27, FontWeight = FontWeights.SemiBold, TextTrimming = TextTrimming.CharacterEllipsis
         };
         var counts = new TextBlock
@@ -57,11 +57,11 @@ public partial class MainWindow
             FontSize = 14, RowHeight = 32, ColumnHeaderHeight = 31
         };
         AutomationProperties.SetAutomationId(grid, "DownloadEntries");
-        if (share is null) grid.Columns.Add(Column("Partage", nameof(DownloadRow.Share), 1));
-        grid.Columns.Add(Column("Fichier", nameof(DownloadRow.File), 1.2));
-        grid.Columns.Add(Column("Date", nameof(DownloadRow.Date), 111, fixedWidth: true));
-        grid.Columns.Add(Column("Adresse IP", nameof(DownloadRow.Ip), 1.15));
-        grid.Columns.Add(Column("Transfert", nameof(DownloadRow.Mode), 103, fixedWidth: true));
+        if (share is null) grid.Columns.Add(Column(Locale.Text("Share"), nameof(DownloadRow.Share), 1));
+        grid.Columns.Add(Column(Locale.Text("File"), nameof(DownloadRow.File), 1.2));
+        grid.Columns.Add(Column(Locale.Text("Date"), nameof(DownloadRow.Date), 155, fixedWidth: true));
+        grid.Columns.Add(Column(Locale.Text("IpAddress"), nameof(DownloadRow.Ip), 1.15));
+        grid.Columns.Add(Column(Locale.Text("Transfer"), nameof(DownloadRow.Mode), 103, fixedWidth: true));
         var top = new StackPanel();
         top.Children.Add(header);
         top.Children.Add(counts);
@@ -73,7 +73,7 @@ public partial class MainWindow
         panel.Children.Add(grid);
         var window = new Window
         {
-            Title = "Téléchargements", Owner = this, Content = panel,
+            Title = Locale.Text("Downloads"), Owner = this, Content = panel,
             Width = share is null ? 842 : 686, Height = 485, MinWidth = 540, MinHeight = 315,
             WindowStartupLocation = WindowStartupLocation.CenterOwner, ShowInTaskbar = false,
             Background = Brushes.White, Foreground = (Brush)FindResource("Ink"), FontFamily = FontFamily
@@ -89,14 +89,14 @@ public partial class MainWindow
             if (share is not null) entries = entries.Where(item => item.ShareId == share.HistoryId).ToArray();
             counts.Text = CountDownloads(entries);
             grid.ItemsSource = entries.Select(item => new DownloadRow(item.ShareName, item.FileName,
-                item.At.LocalDateTime.ToString("dd/MM HH:mm:ss"), item.Address ?? "Indisponible", item.Transport switch
+                item.At.LocalDateTime.ToString("G", Locale.Current.Culture), item.Address ?? Locale.Text("Unavailable"), item.Transport switch
                 {
                     DownloadTransport.WebRtc => "WebRTC",
-                    DownloadTransport.EncryptedRelay => "Relais chiffré",
+                    DownloadTransport.EncryptedRelay => Locale.Text("EncryptedRelay"),
                     _ => "HTTPS"
                 })).ToArray();
-            note.Text = "Une adresse IP peut être partagée par plusieurs personnes. Journal local des 30 derniers jours, limité aux 5 000 derniers transferts.";
-            if (_history.PersistenceUnavailable) note.Text += " Le journal est temporairement en mémoire.";
+            note.Text = Locale.Text("DownloadHistoryHint");
+            if (_history.PersistenceUnavailable) note.Text += " " + Locale.Text("DownloadHistoryMemory");
         }
 
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
@@ -117,10 +117,10 @@ public partial class MainWindow
     {
         var records = source.ToArray();
         var unique = records.Where(item => item.Address is not null).Select(item => item.Address).Distinct().Count();
-        var count = records.Length == 1 ? "1 téléchargement" : $"{records.Length} téléchargements";
-        if (unique != 0) count += $" · {unique} IP distincte{(unique > 1 ? "s" : "")}";
+        var count = Locale.Text(records.Length == 1 ? "DownloadCountOne" : "DownloadCountMany", records.Length);
+        if (unique != 0) count += " · " + Locale.Text(unique == 1 ? "UniqueIpOne" : "UniqueIpMany", unique);
         var unknown = records.Count(item => item.Address is null);
-        if (unknown != 0) count += $" · {unknown} sans IP";
+        if (unknown != 0) count += " · " + Locale.Text("UnknownIpCount", unknown);
         return count;
     }
 

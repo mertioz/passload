@@ -29,7 +29,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
         {
             ObjectDisposedException.ThrowIf(_closed, this);
             if (_server is not null && (_preferredPort != port || _publicHost != publicHost))
-                throw new InvalidOperationException("Arrêtez les partages actifs avant de modifier les paramètres du serveur.");
+                throw new InvalidOperationException(Locale.Text("ServerSettingsBusy"));
             if (_server is null)
             {
                 _server = await StartServerAsync(port, network, string.IsNullOrWhiteSpace(manualAddress), publicHost, duration, cancellation)
@@ -46,7 +46,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
             if (authorizeInbound is not null) await authorizeInbound(actualPort, cancellation).ConfigureAwait(false);
             cancellation.ThrowIfCancellationRequested();
             if (publicHost is not null && _server.CertificateExpiry <= DateTimeOffset.UtcNow.Add(duration))
-                throw new InvalidOperationException("Le certificat HTTPS expire avant la fin de ce partage. Renouvelez-le ou choisissez une durée plus courte.");
+                throw new InvalidOperationException(Locale.Text("CertificateExpiresEarly"));
             return _catalog.Add(files, duration, scope, origin, _server.Fingerprint, route.Label, route.Mapped,
                 publicWebRtc: publicWebRtc, trustedHttps: trustedHttps, details: details);
         }
@@ -76,7 +76,7 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
         }
         catch (IOException ex)
         {
-            throw new IOException($"Le PC ne peut pas écouter sur le port TCP {port}. Choisissez un autre port dans Connexion.", ex);
+            throw new IOException(Locale.Text("TcpPortUnavailable", port), ex);
         }
     }
 
@@ -85,23 +85,23 @@ public sealed class ShareService(DownloadHistory? history = null) : IAsyncDispos
     {
         if (scope == ShareScope.Local)
         {
-            var lan = network.LanAddress ?? throw new InvalidOperationException("Connectez le PC à un réseau Wi-Fi ou Ethernet pour créer un lien local.");
-            return (NetworkInfo.Origin(lan, port), "Réseau privé", false);
+            var lan = network.LanAddress ?? throw new InvalidOperationException(Locale.Text("LocalNetworkRequired"));
+            return (NetworkInfo.Origin(lan, port), "PrivateNetwork", false);
         }
-        if (NetworkInfo.ManualOrigin(manualAddress, port) is { } manual) return (manual, "Adresse manuelle", false);
-        if (network.PublicV4 is { } v4) return (NetworkInfo.Origin(v4, port), "IPv4 directe", false);
+        if (NetworkInfo.ManualOrigin(manualAddress, port) is { } manual) return (manual, "ManualRoute", false);
+        if (network.PublicV4 is { } v4) return (NetworkInfo.Origin(v4, port), "DirectIpv4", false);
         var failure = RouterFailure.NoReply;
         if (_lease is null)
             (_lease, failure) = await RouterLease.DiscoverAsync(network, port, cancellation).ConfigureAwait(false);
         if (_lease is not null) return (_lease.Origin, _lease.Label, true);
-        if (network.PublicV6 is { } v6) return (NetworkInfo.Origin(v6, port), "IPv6 directe", false);
+        if (network.PublicV6 is { } v6) return (NetworkInfo.Origin(v6, port), "DirectIpv6", false);
         var detail = failure switch
         {
-            RouterFailure.NoPublicAddress => "La box annonce une IPv4 privée ou partagée par l’opérateur.",
-            RouterFailure.PortRejected => "La box répond, mais refuse la redirection temporaire.",
-            _ => "Aucun routeur compatible UPnP ou NAT-PMP n’a répondu."
+            RouterFailure.NoPublicAddress => Locale.Text("RouterPrivateIp"),
+            RouterFailure.PortRejected => Locale.Text("RouterRejected"),
+            _ => Locale.Text("RouterNoReply")
         };
-        throw new InvalidOperationException($"{detail} Vérifiez la redirection de port dans Connexion ou choisissez Réseau privé pour les appareils sur le même réseau.");
+        throw new InvalidOperationException(detail + " " + Locale.Text("ForwardingHint"));
     }
 
     public async Task RevokeAsync(string token)

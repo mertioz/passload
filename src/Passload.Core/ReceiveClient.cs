@@ -22,7 +22,7 @@ public sealed partial class ReceiveClient : IDisposable
         if (!Uri.TryCreate(ShareLinks.DirectAddress(link), UriKind.Absolute, out var uri) || uri.Scheme != "https" ||
             uri.UserInfo.Length != 0 || uri.Query.Length != 0 || !SharePath().IsMatch(uri.AbsolutePath) ||
             Fingerprint().Match(uri.Fragment) is not { Success: true } match)
-            throw new FormatException("Collez le lien Passload complet, y compris la partie #sha256= à la fin.");
+            throw new FormatException(Locale.Text("CompleteLinkRequired"));
         var pin = Convert.FromHexString(match.Groups[1].Value);
         _root = new UriBuilder(uri) { Fragment = "", Path = uri.AbsolutePath.TrimEnd('/') + "/" }.Uri;
         var handler = new SocketsHttpHandler
@@ -49,7 +49,7 @@ public sealed partial class ReceiveClient : IDisposable
         var manifest = await response.Content.ReadFromJsonAsync<Manifest>(timeout.Token).ConfigureAwait(false);
         if (manifest?.Files is not { Length: > 0 } || manifest.Files.Where((f, i) =>
             f is null || f.Id != i || string.IsNullOrWhiteSpace(f.Name) || f.Size < 0).Any())
-            throw new InvalidDataException("La liste de fichiers reçue est invalide.");
+            throw new InvalidDataException(Locale.Text("InvalidManifest"));
         return manifest;
     }
 
@@ -79,7 +79,7 @@ public sealed partial class ReceiveClient : IDisposable
                 }
                 await file.FlushAsync(cancellation).ConfigureAwait(false);
             }
-            if (item is not null && received != item.Size) throw new IOException("Le transfert a été interrompu.");
+            if (item is not null && received != item.Size) throw new IOException(Locale.Text("TransferInterrupted"));
             if (OperatingSystem.IsWindows())
             {
                 // Preserve Windows' normal origin marker without recording the private share URL.
@@ -106,9 +106,9 @@ public sealed partial class ReceiveClient : IDisposable
 
     private static void CheckStatus(HttpResponseMessage response)
     {
-        if (response.StatusCode == HttpStatusCode.NotFound) throw new IOException("Ce lien a expiré ou a été arrêté par l’expéditeur.");
-        if (response.StatusCode == HttpStatusCode.Conflict) throw new IOException("Un fichier a changé ou a été déplacé sur le PC expéditeur.");
-        if (response.StatusCode != HttpStatusCode.OK) throw new IOException($"Le PC expéditeur a répondu avec le code {(int)response.StatusCode}.");
+        if (response.StatusCode == HttpStatusCode.NotFound) throw new IOException(Locale.Text("ShareEnded"));
+        if (response.StatusCode == HttpStatusCode.Conflict) throw new IOException(Locale.Text("SenderFileChanged"));
+        if (response.StatusCode != HttpStatusCode.OK) throw new IOException(Locale.Text("SenderResponseCode", (int)response.StatusCode));
     }
 
     public void Dispose() => _http.Dispose();

@@ -3,27 +3,27 @@ using System.Runtime.InteropServices;
 using Passload.Cli;
 using Passload.Core;
 
-const string help = """
-    Passload partage des fichiers depuis cet appareil.
-
-    passload [options] fichier [fichier ...]
-    passload --receive lien destination
-    passload --check-update
-
-    --local             Partage HTTPS sur le réseau local
-    --duration 1h       Validité du lien, en minutes (m), heures (h) ou jours (d)
-    --port 47831        Port TCP local
-    --address URL       Adresse HTTPS d’une redirection configurée manuellement
-    --domain NOM        Domaine couvert par un certificat serveur installé
-    --title TEXTE       Titre affiché sur la page de téléchargement
-    --description TEXTE Description affichée sur la page de téléchargement
-
-    Laissez le programme ouvert pendant le partage. Ctrl+C ferme le lien.
-    """;
+Locale.Use(Environment.GetEnvironmentVariable("PASSLOAD_LANGUAGE"));
 
 if (args is [] or ["--help"] or ["-h"])
 {
-    Console.WriteLine(help);
+    Console.WriteLine($"""
+        {Locale.Text("CliIntro")}
+
+        passload [options] {Locale.Text("CliFileArg")} [{Locale.Text("CliFileArg")} ...]
+        passload --receive {Locale.Text("CliLinkArg")} {Locale.Text("CliDestinationArg")}
+        passload --check-update
+
+        --local              {Locale.Text("CliLocal")}
+        --duration 1h        {Locale.Text("CliDuration")}
+        --port 47831         {Locale.Text("CliPort")}
+        --address URL        {Locale.Text("CliAddress")}
+        --domain example.org {Locale.Text("CliDomain")}
+        --title "..."        {Locale.Text("CliTitle")}
+        --description "..."  {Locale.Text("CliDescription")}
+
+        {Locale.Text("CliKeepOpen")}
+        """);
     return 0;
 }
 if (args is ["--version"])
@@ -34,7 +34,7 @@ if (args is ["--version"])
 
 if (args is ["--interactive"])
 {
-    Console.WriteLine("Saisissez un chemin de fichier par ligne. Validez une ligne vide pour créer le lien.");
+    Console.WriteLine(Locale.Text("CliInteractive"));
     var selected = new List<string>();
     while (Console.ReadLine() is { Length: > 0 } file)
         selected.Add(file.Trim().Trim('"'));
@@ -81,36 +81,36 @@ try
         else if (!option.StartsWith("--", StringComparison.Ordinal)) files.Add(option);
         else
         {
-            if (++i >= args.Length) throw new ArgumentException($"Valeur manquante pour {option}.");
+            if (++i >= args.Length) throw new ArgumentException(Locale.Text("CliMissingValue", option));
             var value = args[i];
             switch (option)
             {
                 case "--duration": duration = ParseDuration(value); break;
                 case "--port":
                     if (!int.TryParse(value, NumberStyles.None, CultureInfo.InvariantCulture, out port) || port is < 1024 or > 65535)
-                        throw new ArgumentException("Indiquez un port entre 1024 et 65535.");
+                        throw new ArgumentException(Locale.Text("InvalidPort"));
                     break;
                 case "--address": address = value; break;
                 case "--domain": domain = value; break;
                 case "--title": title = value; break;
                 case "--description": description = value; break;
-                default: throw new ArgumentException($"Option inconnue {option}. Utilisez --help.");
+                default: throw new ArgumentException(Locale.Text("CliUnknownOption", option));
             }
         }
     }
 
-    if (files.Count == 0) throw new ArgumentException("Indiquez au moins un fichier. Utilisez --help.");
+    if (files.Count == 0) throw new ArgumentException(Locale.Text("CliNoFile"));
     await using var sendUpdates = PortableUpdates.Start(stop.Token);
     await using var sharing = new ShareService();
     var share = await sharing.CreateAsync(files, duration, scope, port, address, stop.Token, publicHost: domain);
     share.UpdateDetails(title, description);
     Console.WriteLine(share.PublishedLink.AbsoluteUri);
-    Console.Error.WriteLine("Partage HTTPS actif. Ctrl+C ferme le lien.");
+    Console.Error.WriteLine(Locale.Text("CliSharingActive"));
 
     using var clock = new PeriodicTimer(TimeSpan.FromSeconds(2));
     while (share.Active && await clock.WaitForNextTickAsync(stop.Token))
     {
-        if (await sharing.MaintainAsync()) throw new IOException("La redirection de la box a changé. Créez un nouveau lien.");
+        if (await sharing.MaintainAsync()) throw new IOException(Locale.Text("ForwardingChanged"));
     }
     return 0;
 }
@@ -135,5 +135,5 @@ static TimeSpan ParseDuration(string value)
         };
         if (duration > TimeSpan.Zero && duration <= TimeSpan.FromDays(7)) return duration;
     }
-    throw new ArgumentException("Choisissez une durée de 1m à 7d, par exemple 15m ou 1h.");
+    throw new ArgumentException(Locale.Text("CliInvalidDuration"));
 }

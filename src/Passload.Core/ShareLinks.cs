@@ -28,7 +28,7 @@ public static partial class ShareLinks
             return link;
 
         try { return Encoding.UTF8.GetString(WebEncoders.Base64UrlDecode(match.Groups[1].Value)); }
-        catch (FormatException) { throw new FormatException("Ce lien Passload est incomplet ou invalide."); }
+        catch (FormatException) { throw new FormatException(Locale.Text("InvalidPassloadLink")); }
     }
 }
 

@@ -1,6 +1,8 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Windows;
+using System.Windows.Controls;
+using Passload.Core;
 
 namespace Passload;
 
@@ -15,7 +17,7 @@ public partial class MainWindow
     {
         if (WindowsPackage.HasIdentity)
         {
-            CheckUpdateButton.Content = "Mises à jour du Microsoft Store";
+            CheckUpdateButton.SetResourceReference(ContentControl.ContentProperty, "Text.StoreUpdates");
             return;
         }
         CheckUpdateButton.IsEnabled = AppUpdate.Available;
@@ -24,10 +26,10 @@ public partial class MainWindow
         if (startup == "--update-incomplete")
         {
             _nextUpdateCheck = DateTimeOffset.UtcNow.AddHours(1);
-            Notice("La mise à jour n’a pas pu remplacer l’exécutable.", true);
+            Notice(Locale.Text("UpdateReplaceFailed"), true);
             return;
         }
-        if (startup == "--updated") Notice($"Passload {AppUpdate.Version.ToString(3)} est installé.");
+        if (startup == "--updated") Notice(Locale.Text("UpdateInstalled", AppUpdate.Version.ToString(3)));
         _ = CheckUpdatesAsync(manual: false);
     }
 
@@ -48,13 +50,13 @@ public partial class MainWindow
         _nextUpdateCheck = DateTimeOffset.UtcNow.AddHours(1);
         if (_pendingUpdate is not null)
         {
-            if (manual) Notice("Mise à jour prête. Elle s’installera dès que Passload sera libre.");
+            if (manual) Notice(Locale.Text("UpdateReady"));
             return;
         }
 
         _checkingUpdate = true;
         CheckUpdateButton.IsEnabled = false;
-        if (manual) Notice("Vérification des mises à jour…");
+        if (manual) Notice(Locale.Text("CheckingUpdates"));
         try
         {
             var update = await AppUpdate.CheckAsync(_lifetime.Token);
@@ -65,12 +67,12 @@ public partial class MainWindow
             }
             _pendingUpdate = update;
             if (update is not null && (HasWork || HasDraft))
-                Notice($"Passload {update.Version.ToString(3)} est prêt à s’installer après les opérations en cours.");
-            else if (manual && update is null) Notice($"Passload {AppUpdate.Version.ToString(3)} est à jour.");
+                Notice(Locale.Text("UpdateWaiting", update.Version.ToString(3)));
+            else if (manual && update is null) Notice(Locale.Text("UpToDate", AppUpdate.Version.ToString(3)));
         }
         catch (Exception ex)
         {
-            if (!_closing && manual) Notice("Vérification des mises à jour impossible. " + ex.Message, true);
+            if (!_closing && manual) Notice(Locale.Text("UpdateCheckFailed") + " " + ex.Message, true);
         }
         finally
         {

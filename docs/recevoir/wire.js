@@ -1,3 +1,5 @@
+import {text} from "./language.js";
+
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 export const encode = text => encoder.encode(text);
@@ -97,10 +99,10 @@ export class Peer {
   async send(data) {
     if (this.closed) throw new Error("Transfert interrompu.");
     if (this.transport === "relay") { await this.room.send(this.id, 2, data); return; }
-    if (this.dc?.readyState !== "open") throw new Error("Connexion directe interrompue.");
+    if (this.dc?.readyState !== "open") throw new Error(text("ConnectionInterrupted"));
     while (this.dc.bufferedAmount > 512 * 1024) {
       await sleep(10);
-      if (this.closed || this.dc.readyState !== "open") throw new Error("Connexion interrompue.");
+      if (this.closed || this.dc.readyState !== "open") throw new Error(text("ConnectionInterrupted"));
     }
     this.dc.send(data);
   }

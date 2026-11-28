@@ -10,11 +10,14 @@ public partial class MainWindow
     private ReceiveClient? _receiver;
     private CancellationTokenSource? _receiveStop;
     private Task? _receiveTask;
+    private Manifest? _incomingManifest;
+    private string? _receiveMessageKey;
 
     private void ReceiveUrlChanged(object sender, TextChangedEventArgs e)
     {
         if (IncomingCard is null || InspectButton is null) return;
-        IncomingCard.Visibility = Visibility.Collapsed;
+        _incomingManifest = null;
+        RefreshIncoming();
         _receiver?.Dispose();
         _receiver = null;
         InspectButton.IsEnabled = !string.IsNullOrWhiteSpace(ReceiveUrl.Text);
@@ -29,14 +32,15 @@ public partial class MainWindow
             {
                 var page = await _internet.LegacyReaderUriAsync(legacyLink!, _lifetime.Token);
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(page.AbsoluteUri) { UseShellExecute = true });
-                Notice("Lien ouvert dans le navigateur.");
+                Notice(Locale.Text("LinkOpenedInBrowser"));
             }
             catch (Exception ex) { Notice(Friendly(ex), true); }
             return;
         }
         await ReceiveWork(async token =>
         {
-            IncomingCard.Visibility = Visibility.Collapsed;
+            _incomingManifest = null;
+            RefreshIncoming();
             _receiver?.Dispose();
             // A router may not loop connections to its public IP back to the originating PC.
             var address = ShareLinks.DirectAddress(ReceiveUrl.Text);
@@ -44,14 +48,22 @@ public partial class MainWindow
             var link = own is null ? address : new UriBuilder(own.Link)
                 { Host = "127.0.0.1", Port = _sharing.LocalPort ?? _settings.Port }.Uri.AbsoluteUri;
             _receiver = new ReceiveClient(link);
-            var data = await _receiver.InspectAsync(token);
-            IncomingSummary.Text = Display.Count(data.Files.Length);
-            ZipButton.Visibility = data.Files.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
-            IncomingRows.Children.Clear();
-            foreach (var file in data.Files) IncomingRows.Children.Add(MakeRow(file.Name, file.Size, "Télécharger", () => StartDownload(file)));
-            IncomingCard.Visibility = Visibility.Visible;
-            Notice($"PC expéditeur vérifié. Lien valide jusqu’au {data.ExpiresAt.LocalDateTime:dd/MM à HH:mm}.");
-        }, "Connexion au PC expéditeur…");
+            _incomingManifest = await _receiver.InspectAsync(token);
+            RefreshIncoming();
+            Notice(Locale.Text("SenderVerified", _incomingManifest.ExpiresAt.LocalDateTime.ToString("g", Locale.Current.Culture)));
+        }, "ConnectingToSender");
+    }
+
+    private void RefreshIncoming()
+    {
+        var data = _incomingManifest;
+        IncomingCard.Visibility = data is null ? Visibility.Collapsed : Visibility.Visible;
+        if (data is null) return;
+        IncomingSummary.Text = Display.Count(data.Files.Length);
+        ZipButton.Visibility = data.Files.Length > 1 ? Visibility.Visible : Visibility.Collapsed;
+        IncomingRows.Children.Clear();
+        foreach (var file in data.Files)
+            IncomingRows.Children.Add(MakeRow(file.Name, file.Size, Locale.Text("Download"), () => StartDownload(file)));
     }
 
     private void DownloadZip(object sender, RoutedEventArgs e) => StartDownload(null);
@@ -61,9 +73,9 @@ public partial class MainWindow
         if (_receiveTask is not null || _receiver is null) return;
         var dialog = new SaveFileDialog
         {
-            Title = "Enregistrer le téléchargement",
+            Title = Locale.Text("SaveDownload"),
             FileName = item is null ? "Passload.zip" : ReceiveClient.SuggestedName(item.Name),
-            Filter = item is null ? "Archive ZIP (*.zip)|*.zip" : "Tous les fichiers (*.*)|*.*",
+            Filter = item is null ? Locale.Text("ZipArchive") + "|*.zip" : Locale.Text("AllFiles") + "|*.*",
             AddExtension = item is null, OverwritePrompt = true
         };
         if (!SelectFile(dialog)) return;
@@ -73,20 +85,21 @@ public partial class MainWindow
             DownloadProgress.IsIndeterminate = item is null;
             var progress = new Progress<long>(received =>
             {
-                DownloadText.Text = item is null ? $"{Display.Size(received)} reçus" : $"{Display.Size(received)} / {Display.Size(item.Size)}";
+                DownloadText.Text = item is null ? Locale.Text("DownloadReceived", Display.Size(received)) : $"{Display.Size(received)} / {Display.Size(item.Size)}";
                 if (item is { Size: > 0 }) DownloadProgress.Value = Math.Min(100, 100.0 * received / item.Size);
             });
             await _receiver.DownloadAsync(item, dialog.FileName, progress, token, overwrite);
-            Notice("Téléchargement enregistré dans " + dialog.FileName);
-        }, "Téléchargement en cours…");
+            Notice(Locale.Text("DownloadSaved", dialog.FileName));
+        }, "Downloading");
     }
 
-    private async Task ReceiveWork(Func<CancellationToken, Task> work, string message)
+    private async Task ReceiveWork(Func<CancellationToken, Task> work, string messageKey)
     {
         using var stop = CancellationTokenSource.CreateLinkedTokenSource(_lifetime.Token);
         _receiveStop = stop;
         ReceiveUrl.IsEnabled = InspectButton.IsEnabled = IncomingCard.IsEnabled = false;
-        DownloadText.Text = message;
+        _receiveMessageKey = messageKey;
+        DownloadText.Text = Locale.Text(messageKey);
         DownloadPanel.Visibility = Visibility.Visible;
         DownloadProgress.IsIndeterminate = true;
         DownloadProgress.Value = 0;
@@ -98,10 +111,11 @@ public partial class MainWindow
         }
         catch (Exception ex)
         {
-            if (!_closing) Notice(stop.IsCancellationRequested ? "Réception annulée." : Friendly(ex), !stop.IsCancellationRequested);
+            if (!_closing) Notice(stop.IsCancellationRequested ? Locale.Text("ReceivingCanceled") : Friendly(ex), !stop.IsCancellationRequested);
         }
         finally
         {
+            _receiveMessageKey = null;
             _receiveTask = null;
             _receiveStop = null;
             DownloadPanel.Visibility = Visibility.Collapsed;

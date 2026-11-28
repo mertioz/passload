@@ -1,3 +1,4 @@
+import {text} from "./language.js";
 import {deferred, encode} from "./wire.js";
 
 export class SocketMeeting {
@@ -20,13 +21,13 @@ export class SocketMeeting {
       }).catch(() => this.close());
     };
     this.socket.onclose = () => {
-      this.ready.reject(new Error("Le WebRTC du PC est indisponible."));
+      this.ready.reject(new Error(text("WebRtcUnavailable")));
       offline();
     };
   }
 
   async signal(peer, signal) {
-    if (this.socket.readyState !== WebSocket.OPEN) throw new Error("Connexion interrompue.");
+    if (this.socket.readyState !== WebSocket.OPEN) throw new Error(text("ConnectionInterrupted"));
     this.socket.send(JSON.stringify({peer, signal}));
   }
 

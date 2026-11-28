@@ -34,19 +34,19 @@ internal static class AppUpdate
         Delete(apply);
         await using var file = File.OpenRead(update.File);
         var digest = Convert.ToHexString(await SHA256.HashDataAsync(file, stop));
-        if (digest != update.Hash) throw new InvalidDataException("Le fichier de mise à jour a changé après son téléchargement.");
+        if (digest != update.Hash) throw new InvalidDataException(Locale.Text("UpdateFileChanged"));
 
         var start = new ProcessStartInfo(update.File) { UseShellExecute = false, CreateNoWindow = true };
         start.ArgumentList.Add("--install-update");
         start.ArgumentList.Add(Environment.ProcessId.ToString(System.Globalization.CultureInfo.InvariantCulture));
         start.ArgumentList.Add(update.Hash);
         start.ArgumentList.Add(reopen ? "show" : "stay-closed");
-        using var installer = Process.Start(start) ?? throw new IOException("Impossible de lancer la mise à jour.");
+        using var installer = Process.Start(start) ?? throw new IOException(Locale.Text("UpdateStartFailed"));
         var elapsed = Stopwatch.StartNew();
         while (!File.Exists(marker))
         {
             if (installer.HasExited || elapsed.Elapsed > TimeSpan.FromSeconds(30))
-                throw new IOException("Impossible de préparer la mise à jour. Vérifiez que le dossier de Passload est accessible en écriture.");
+                throw new IOException(Locale.Text("UpdatePrepareFailed"));
             await Task.Delay(100, stop);
         }
         stop.ThrowIfCancellationRequested();

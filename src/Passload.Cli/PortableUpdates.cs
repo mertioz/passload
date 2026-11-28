@@ -30,11 +30,11 @@ internal sealed class PortableUpdates : IAsyncDisposable
 
     public static async Task CheckNowAsync(CancellationToken stop)
     {
-        var installation = FindInstallation() ?? throw new InvalidOperationException("Utilisez l’exécutable distribué pour Linux ou macOS.");
+        var installation = FindInstallation() ?? throw new InvalidOperationException(Locale.Text("CliUnsupportedUpdate"));
         var asset = await GitHubUpdates.CheckAsync(installation.AssetName, stop);
         if (asset is null)
         {
-            Console.WriteLine($"Passload {GitHubUpdates.CurrentVersion.ToString(3)} est à jour.");
+            Console.WriteLine(Locale.Text("UpToDate", GitHubUpdates.CurrentVersion.ToString(3)));
             return;
         }
 
@@ -42,7 +42,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
         if (installation.Managed)
         {
             package.Keep = true;
-            Console.WriteLine($"Installateur {asset.Version.ToString(3)} vérifié. Ouvrez-le avec le gestionnaire de paquets de votre système.");
+            Console.WriteLine(Locale.Text("CliInstallerVerified", asset.Version.ToString(3)));
             Console.WriteLine(package.File);
             return;
         }
@@ -62,7 +62,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
                 if (asset is not null)
                 {
                     if (!_installation.Managed) return await StageAsync(asset, _installation.AssetName, _network.Token);
-                    Console.Error.WriteLine($"Passload {asset.Version.ToString(3)} est disponible. Utilisez passload --check-update pour récupérer l’installateur.");
+                    Console.Error.WriteLine(Locale.Text("CliUpdateAvailable", asset.Version.ToString(3)));
                     return null;
                 }
             }
@@ -85,7 +85,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
         }
         catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException)
         {
-            Console.Error.WriteLine("La mise à jour n’a pas été installée. " + ex.Message);
+            Console.Error.WriteLine(Locale.Text("CliUpdateFailed") + " " + ex.Message);
         }
         finally
         {
@@ -96,7 +96,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
 
     private static async Task<Pending> StageAsync(ReleaseAsset asset, string name, CancellationToken stop)
     {
-        Console.Error.WriteLine($"Téléchargement de Passload {asset.Version.ToString(3)}…");
+        Console.Error.WriteLine(Locale.Text("CliDownloadingUpdate", asset.Version.ToString(3)));
         var folder = Directory.CreateTempSubdirectory("passload-update-");
         var package = new Pending(asset.Version, folder, Path.Combine(folder.FullName, name));
         try
@@ -116,8 +116,8 @@ internal sealed class PortableUpdates : IAsyncDisposable
         if (OperatingSystem.IsWindows()) throw new PlatformNotSupportedException();
         var changed = await ReplaceAsync(installation.Executable, installation.Original, package.File, stop);
         Console.Error.WriteLine(changed
-            ? $"Passload {package.Version.ToString(3)} est installé pour le prochain lancement."
-            : "L’exécutable a changé pendant la vérification. Relancez Passload pour utiliser la version installée.");
+            ? Locale.Text("CliUpdateNextLaunch", package.Version.ToString(3))
+            : Locale.Text("CliExecutableChanged"));
     }
 
     [UnsupportedOSPlatform("windows")]
@@ -136,10 +136,10 @@ internal sealed class PortableUpdates : IAsyncDisposable
             await using var tar = new TarReader(compressed);
             while (await tar.GetNextEntryAsync(cancellationToken: stop) is { } entry)
             {
-                if (entry.Length > GitHubUpdates.MaximumSize) throw new InvalidDataException("Un fichier de l’archive dépasse la taille autorisée.");
+                if (entry.Length > GitHubUpdates.MaximumSize) throw new InvalidDataException(Locale.Text("CliArchiveEntryTooLarge"));
                 if (entry.Name != "passload") continue;
                 if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile) || entry.DataStream is not { } input || entry.Length == 0)
-                    throw new InvalidDataException("L’archive ne contient pas d’exécutable Passload valide.");
+                    throw new InvalidDataException(Locale.Text("CliArchiveInvalid"));
                 await using (var output = new FileStream(temporary, new FileStreamOptions
                 {
                     Mode = FileMode.CreateNew, Access = FileAccess.Write, Options = FileOptions.Asynchronous,
@@ -147,7 +147,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
                 }))
                 {
                     await input.CopyToAsync(output, stop);
-                    if (output.Length != entry.Length) throw new InvalidDataException("L’exécutable de l’archive est incomplet.");
+                    if (output.Length != entry.Length) throw new InvalidDataException(Locale.Text("CliArchiveIncomplete"));
                 }
 
                 const UnixFileMode permissions = (UnixFileMode)0x1ff;
@@ -157,7 +157,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
                 File.Move(temporary, executable, overwrite: true);
                 return true;
             }
-            throw new InvalidDataException("L’archive ne contient pas l’exécutable Passload.");
+            throw new InvalidDataException(Locale.Text("CliArchiveMissingExe"));
         }
         finally { File.Delete(temporary); }
     }
@@ -174,7 +174,7 @@ internal sealed class PortableUpdates : IAsyncDisposable
             "/usr/lib/passload" => File.ReadAllText(Path.Combine(directory, "package-format")).Trim() switch
             {
                 "deb" => "deb", "rpm" => "rpm",
-                _ => throw new InvalidDataException("Format de paquet Linux inconnu.")
+                _ => throw new InvalidDataException(Locale.Text("CliPackageUnknown"))
             },
             "/usr/local/libexec/passload" => "pkg",
             _ => "tar.gz"

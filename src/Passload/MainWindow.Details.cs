@@ -13,7 +13,7 @@ public partial class MainWindow
     private void EditDraftDetails(object sender, RoutedEventArgs e)
     {
         var defaultName = _draft.Count == 0 ? null : Share.DefaultNameFor(_draft.Values.First().Name, _draft.Count);
-        if (ShowDetailsEditor("Nom et description", _draftDetails, defaultName) is { } details)
+        if (ShowDetailsEditor(Locale.Text("ShareDetails"), _draftDetails, defaultName) is { } details)
             SetDraftDetails(details);
     }
 
@@ -25,16 +25,16 @@ public partial class MainWindow
 
     private void EditShareDetails(Share share)
     {
-        if (ShowDetailsEditor("Modifier le lien", share.Details, share.DefaultName) is not { } details) return;
+        if (ShowDetailsEditor(Locale.Text("EditLink"), share.Details, share.DefaultName) is not { } details) return;
         if (!share.Active)
         {
-            Notice("Le lien a expiré.", true);
+            Notice(Locale.Text("LinkExpired"), true);
             return;
         }
         share.UpdateDetails(details.Title, details.Description);
         _lastLinks = null;
         RefreshLinks();
-        Notice("Lien mis à jour.");
+        Notice(Locale.Text("LinkUpdated"));
     }
 
     private ShareDetails? ShowDetailsEditor(string dialogTitle, ShareDetails? saved, string? defaultName)
@@ -49,9 +49,9 @@ public partial class MainWindow
         };
         AutomationProperties.SetAutomationId(title, "ShareTitle");
         AutomationProperties.SetAutomationId(description, "ShareDescription");
-        AutomationProperties.SetName(title, "Nom du lien");
-        AutomationProperties.SetName(description, "Description");
-        fields.Children.Add(new TextBlock { Text = "Nom du lien", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) });
+        AutomationProperties.SetName(title, Locale.Text("LinkName"));
+        AutomationProperties.SetName(description, Locale.Text("Description"));
+        fields.Children.Add(new TextBlock { Text = Locale.Text("LinkName"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 6) });
         fields.Children.Add(title);
         if (defaultName is not null)
         {
@@ -62,11 +62,11 @@ public partial class MainWindow
             RefreshPlaceholder();
             fields.Children.Add(placeholder);
         }
-        fields.Children.Add(new TextBlock { Text = "Description", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 11, 0, 6) });
+        fields.Children.Add(new TextBlock { Text = Locale.Text("Description"), FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 11, 0, 6) });
         fields.Children.Add(description);
         var buttons = new StackPanel { HorizontalAlignment = HorizontalAlignment.Right, Orientation = Orientation.Horizontal, Margin = new Thickness(0, 19, 0, 0) };
-        var cancel = new Button { Content = "Annuler", IsCancel = true, Margin = new Thickness(0, 0, 7, 0) };
-        var apply = new Button { Content = "Enregistrer", Style = (Style)FindResource("Primary"), IsDefault = true, MinWidth = 125 };
+        var cancel = new Button { Content = Locale.Text("Cancel"), IsCancel = true, Margin = new Thickness(0, 0, 7, 0) };
+        var apply = new Button { Content = Locale.Text("Save"), Style = (Style)FindResource("Primary"), IsDefault = true, MinWidth = 125 };
         buttons.Children.Add(cancel);
         buttons.Children.Add(apply);
         fields.Children.Add(buttons);

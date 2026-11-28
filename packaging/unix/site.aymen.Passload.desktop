@@ -1,7 +1,12 @@
 [Desktop Entry]
 Type=Application
 Name=Passload
-Comment=Partager des fichiers par lien temporaire
+Comment=Share files with a temporary link
+Comment[fr]=Partager des fichiers par lien temporaire
+Comment[de]=Dateien mit einem temporären Link teilen
+Comment[es]=Compartir archivos con un enlace temporal
+Comment[ja]=一時リンクでファイルを共有
+Comment[zh_CN]=使用临时链接共享文件
 Exec=passload --interactive
 TryExec=passload
 Icon=site.aymen.Passload

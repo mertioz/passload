@@ -1,3 +1,4 @@
+import {text, language, formatSize} from "./language.js";
 import {Incoming} from "./incoming.js";
 import {Meeting} from "./pipe.js";
 import {chooseDestination, saveRemote} from "./save.js";
@@ -5,17 +6,17 @@ import {chooseDestination, saveRemote} from "./save.js";
 const el = id => document.getElementById(id);
 const sharedPage = location.pathname === "/";
 const invite = sharedPage ? readPublicLink(location.hash) : readLegacyLink(location.hash);
-const offline = "Le partage est arrêté, le lien a expiré ou le PC expéditeur est hors ligne.";
+const offline = text("Offline");
 let current, busy = false, archiveEstimate = 0;
 const show = text => {
   el("status").textContent = text;
   el("status").hidden = !text;
 };
-const formatSize = n => {
-  if (!n) return "0 o";
-  const i = Math.min(5, Math.floor(Math.log(n) / Math.log(1024)));
-  return new Intl.NumberFormat("fr-FR", {maximumFractionDigits:1}).format(n / 1024 ** i) + " " + ["o","Ko","Mo","Go","To","Po"][i];
-};
+el("title").textContent = document.title = text("ReceiveFiles");
+el("retry").textContent = text("Retry");
+el("https").textContent = text("OpenHttps");
+el("zip").textContent = text("DownloadZip");
+el("tracking").textContent = text("Tracking");
 
 function readLegacyLink(hash) {
   const match = hash.match(/^#p2\.([A-Za-z0-9_-]{87})\.([A-Za-z0-9_-]{43})\.(\d{10,13})$/);
@@ -39,7 +40,7 @@ function offerHttps() {
   const link = el("https");
   link.href = invite.https.href;
   link.hidden = false;
-  el("destination").textContent = "PC expéditeur · " + invite.https.host;
+  el("destination").textContent = text("SenderAddress", invite.https.host);
   el("destination").hidden = false;
 }
 
@@ -53,32 +54,32 @@ async function download(file) {
     const name = file?.name || "Passload.zip";
     const destination = await chooseDestination(name, file?.size ?? archiveEstimate);
     source = await current.open(file ? file.id : "zip");
-    await saveRemote(source, name, file?.size ?? null, file ? "application/octet-stream" : "application/zip", bytes => show("Téléchargement · " + formatSize(bytes)), destination);
+    await saveRemote(source, name, file?.size ?? null, file ? "application/octet-stream" : "application/zip", bytes => show(text("DownloadProgress", formatSize(bytes))), destination);
     await source.confirm?.();
-    show("Téléchargement terminé.");
+    show(text("Downloaded"));
   } catch (err) {
-    show(err.name === "AbortError" ? "Téléchargement annulé." : err.message);
+    show(err.name === "AbortError" ? text("Canceled") : err.message);
     if (err.name !== "AbortError") offerHttps();
   }
   finally { await source?.cancel(); busy = false; if (current && !current.closed) enableButtons(true); }
 }
 async function connect(forceRelay = false) {
-  if (!invite) { show("Ouvrez le lien complet envoyé par l’expéditeur."); return; }
-  if (invite.until <= Date.now()) { show("Ce lien a expiré."); return; }
+  if (!invite) { show(text("CompleteLink")); return; }
+  if (invite.until <= Date.now()) { show(text("Expired")); return; }
   if (!invite.room) { show(""); offerHttps(); return; }
   current?.drop(); el("retry").hidden = true; el("files").hidden = true;
   delete document.documentElement.dataset.transfer;
-  show("Connexion à l’expéditeur…");
+  show(text("Connecting"));
   const client = new Incoming((...callbacks) => Meeting.create({room:invite.room, key:invite.key}, ...callbacks), () => {
     if (client === current) { show(offline); enableButtons(false); el("retry").hidden = false; offerHttps(); }
-  });
+  }, show);
   current = client;
   try {
     const mode = await client.connect(forceRelay, undefined, !sharedPage);
     const manifest = await client.manifest();
     if (!Array.isArray(manifest.files) || !manifest.files.length || manifest.files.some((f,i) =>
-      f.id !== i || typeof f.name !== "string" || !Number.isSafeInteger(f.size) || f.size < 0)) throw new Error("Liste de fichiers invalide.");
-    const title = manifest.name || (manifest.files.length === 1 ? "Un fichier partagé" : manifest.files.length + " fichiers partagés");
+      f.id !== i || typeof f.name !== "string" || !Number.isSafeInteger(f.size) || f.size < 0)) throw new Error(text("ManifestInvalid"));
+    const title = manifest.name || text(manifest.files.length === 1 ? "SharedOne" : "SharedMany", manifest.files.length);
     el("title").textContent = document.title = title;
     const description = el("description");
     if (description) {
@@ -91,12 +92,12 @@ async function connect(forceRelay = false) {
       const row = document.createElement("li"), details = document.createElement("div");
       const name = document.createElement("b"), size = document.createElement("small"), action = document.createElement("button");
       name.textContent = file.name; size.textContent = formatSize(file.size);
-      action.textContent = "Télécharger"; action.setAttribute("aria-label", "Télécharger " + file.name);
+      action.textContent = text("Download"); action.setAttribute("aria-label", text("DownloadFile", file.name));
       action.onclick = () => void download(file);
       details.append(name,size); row.append(details,action); el("list").append(row);
     }
     el("zip").hidden = manifest.files.length < 2;
-    el("expiry").textContent = "Expire le " + new Date(manifest.expiresAt).toLocaleString("fr-FR");
+    el("expiry").textContent = text("Expiry", new Date(manifest.expiresAt).toLocaleString(language));
     el("files").hidden = false; enableButtons(true);
     if (sharedPage) el("https").hidden = el("destination").hidden = true;
     document.documentElement.dataset.transfer = mode === "direct" ? "webrtc" : "relay";

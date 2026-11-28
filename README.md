@@ -29,6 +29,8 @@ Cet installateur ajoute Passload au menu Démarrer et à **Applications install�
 
 ![Fenêtre principale de Passload](docs/passload.png)
 
+Passload est disponible en français, anglais, allemand, espagnol, japonais et chinois simplifié. Sous Windows, choisissez une langue dans **Paramètres → Langue**. Les pages de réception suivent la langue du navigateur.
+
 ## Envoyer sous Windows
 
 `Passload-Setup.exe` ajoute Passload au menu Démarrer et à **Applications installées**. `Passload.exe` peut être lancé directement depuis son dossier.
@@ -83,7 +85,7 @@ L’onglet **Recevoir** ouvre aussi les anciens liens GitHub Pages avec le lecte
 
 Installez le paquet adapté à votre système et à votre architecture. Debian et Ubuntu utilisent le `.deb`, Fedora et les distributions compatibles le `.rpm`, et macOS le `.pkg`. Les paquets Linux enregistrent Passload dans le gestionnaire de paquets et ajoutent une entrée au menu des applications. Chaque plateforme propose aussi une archive portable.
 
-Dans le terminal, lancez `passload document.pdf photo.jpg` pour partager en HTTPS ou ajoutez `--local` pour le réseau local. Depuis une archive extraite, lancez `./passload`. Laissez le terminal ouvert pendant le partage. Pour recevoir avec vérification de l’empreinte, utilisez `passload --receive 'LIEN' destination`. Avec plusieurs fichiers, `destination` reçoit le ZIP. `passload --help` affiche les options.
+Dans le terminal, lancez `passload document.pdf photo.jpg` pour partager en HTTPS ou ajoutez `--local` pour le réseau local. Depuis une archive extraite, lancez `./passload`. Laissez le terminal ouvert pendant le partage. Pour recevoir avec vérification de l’empreinte, utilisez `passload --receive 'LIEN' destination`. Avec plusieurs fichiers, `destination` reçoit le ZIP. `passload --help` affiche les options. Le terminal utilise la langue du système. Pour la changer, lancez par exemple `PASSLOAD_LANGUAGE=ja passload --help`.
 
 Passload vérifie GitHub au démarrage d’un partage ou d’une réception, puis toutes les heures. L’édition portable vérifie le SHA-256 et se met à jour après le transfert. `passload --check-update` lance une vérification manuelle. Pour les éditions installées, la commande récupère et vérifie le paquet que le gestionnaire du système peut installer.
 

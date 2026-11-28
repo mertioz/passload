@@ -52,6 +52,7 @@ if (publicAddress && !trustedHost) {
 async function testReceiver(browser, name, webRtcBlocked, output) {
   const context = await browser.newContext({
     acceptDownloads:true,
+    locale:"fr-FR",
     // The fixture certificate was pinned above. Firefox uses a fresh isolated context.
     ignoreHTTPSErrors:publicAddress && !trustedHost && name === "firefox",
   });

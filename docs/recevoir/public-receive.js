@@ -1,3 +1,4 @@
+import {text, formatSize} from "./language.js";
 import {Incoming} from "./incoming.js";
 import {chooseDestination, saveRemote} from "./save.js";
 import {SocketMeeting} from "./socket-meeting.js";
@@ -38,7 +39,7 @@ for (const link of document.querySelectorAll("a[data-item]")) {
     busy = true;
     let file;
     try {
-      show("Préparation du téléchargement…");
+      show(text("Preparing"));
       if (!await connected || client.closed) {
         show("");
         location.assign(link.href);
@@ -51,14 +52,14 @@ for (const link of document.querySelectorAll("a[data-item]")) {
       const destination = navigator.userActivation?.isActive ? await chooseDestination(name, estimate) : null;
       file = await client.open(zip ? "zip" : Number(link.dataset.item));
       await saveRemote(file, name, zip ? null : estimate, zip ? "application/zip" : "application/octet-stream",
-        received => show(new Intl.NumberFormat("fr-FR", {maximumFractionDigits:1}).format(received / 1024) + " Ko reçus."), destination);
+        received => show(text("DownloadProgress", formatSize(received))), destination);
       await file.confirm?.();
-      show("Téléchargement terminé.");
+      show(text("Downloaded"));
     } catch (error) {
-      if (error.name === "AbortError") show("Téléchargement annulé.");
+      if (error.name === "AbortError") show(text("Canceled"));
       else {
         client.drop();
-        show("Reprise du téléchargement…");
+        show(text("Resuming"));
         location.assign(link.href);
       }
     } finally {

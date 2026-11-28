@@ -121,13 +121,13 @@ internal sealed class RouterLease
             {
                 var assigned = await MapAsync(device, port, candidate, owner, cancellation).ConfigureAwait(false);
                 var confirmed = await ConfirmUpnpAsync(device, assigned, owner, cancellation).ConfigureAwait(false)
-                    ?? throw new IOException("La redirection temporaire n’a pas pu être confirmée.");
+                    ?? throw new IOException(Locale.Text("ForwardingNotConfirmed"));
                 return new RouterLease(device, confirmed, external, owner);
             }
             catch (MappingException error) when (error.ErrorCode == ErrorCode.ConflictInMappingEntry ||
                     (int)error.ErrorCode == ConflictWithOtherMechanisms) { }
         }
-        throw new IOException("Aucun port public disponible sur la box.");
+        throw new IOException(Locale.Text("NoPublicPort"));
     }
 
     private static async Task<Mapping?> FindAsync(INatDevice device, int port, CancellationToken cancellation = default)

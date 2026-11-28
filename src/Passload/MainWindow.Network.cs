@@ -11,7 +11,7 @@ using Passload.Core;
 
 namespace Passload;
 
-internal sealed record Settings(int Port, string Manual, string? PublicHost = null)
+internal sealed record Settings(int Port, string Manual, string? PublicHost = null, string? Language = null)
 {
     private static string FilePath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Passload", "settings.json");
     public static Settings Load()
@@ -48,8 +48,8 @@ public partial class MainWindow
         try
         {
             var info = NetworkInfo.Read();
-            LocalAddressText.Text = info.LanAddress is { } lan ? $"Destination de la redirection     {lan}  ·  TCP {_sharing.LocalPort ?? _settings.Port}" : "Adresse locale indisponible.";
-            IPv6Text.Text = info.PublicV6 is null ? "IPv6 publique non détectée sur ce PC." : $"IPv6 publique détectée     {info.PublicV6}";
+            LocalAddressText.Text = info.LanAddress is { } lan ? $"{Locale.Text("ForwardingDestination")}     {lan}  ·  TCP {_sharing.LocalPort ?? _settings.Port}" : Locale.Text("NoLanAddress");
+            IPv6Text.Text = info.PublicV6 is null ? Locale.Text("NoPublicIpv6") : $"{Locale.Text("PublicIpv6Found")}     {info.PublicV6}";
             var gateway = info.Gateways.FirstOrDefault(g => g.AddressFamily == AddressFamily.InterNetwork && !IPAddress.IsLoopback(g));
             _routerPage = gateway is null ? null : new UriBuilder("http", gateway.ToString()).Uri;
             RouterButton.IsEnabled = _routerPage is not null;
@@ -67,12 +67,12 @@ public partial class MainWindow
     private Settings ReadSettings()
     {
         if (!int.TryParse(PortInput.Text, out var port) || port is < 1024 or > 65535)
-            throw new FormatException("Choisissez un port entre 1024 et 65535.");
+            throw new FormatException(Locale.Text("InvalidPort"));
         var manual = ManualInput.Text.Trim();
         NetworkInfo.ManualOrigin(manual, port);
-        var next = new Settings(port, manual, NetworkInfo.NormalizePublicHost(PublicHostInput.Text));
+        var next = _settings with { Port = port, Manual = manual, PublicHost = NetworkInfo.NormalizePublicHost(PublicHostInput.Text) };
         if ((_sharing.Active.Length > 0 || _creating) && next != _settings)
-            throw new InvalidOperationException("Arrêtez les partages en cours avant de modifier la connexion.");
+            throw new InvalidOperationException(Locale.Text("SettingsBusy"));
         return next;
     }
 
@@ -84,7 +84,7 @@ public partial class MainWindow
             next.Write();
             _settings = next;
             DisplayNetwork();
-            Notice("Réglages de connexion enregistrés.");
+            Notice(Locale.Text("NetworkSettingsSaved"));
         }
         catch (Exception ex) { Notice(Friendly(ex), true); }
     }
@@ -96,12 +96,12 @@ public partial class MainWindow
         try
         {
             var next = ReadSettings();
-            if (next != _settings) throw new InvalidOperationException("Enregistrez les réglages avant d’autoriser le port dans Windows.");
+            if (next != _settings) throw new InvalidOperationException(Locale.Text("SaveBeforeFirewall"));
             var port = _sharing.LocalPort ?? next.Port;
             await Firewall.RequestAsync(port);
-            Notice($"Windows autorise Passload à recevoir des connexions sur le port TCP {port}.");
+            Notice(Locale.Text("FirewallAllowed", port));
         }
-        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { Notice("Demande de pare-feu annulée."); }
+        catch (Win32Exception ex) when (ex.NativeErrorCode == 1223) { Notice(Locale.Text("FirewallCanceled")); }
         catch (Exception ex) { Notice(Friendly(ex), true); }
         finally { button.IsEnabled = true; }
     }
@@ -117,6 +117,6 @@ public partial class MainWindow
         }
         var content = new TextBox { Text = string.Join("\n\n──────────────\n\n", sections), IsReadOnly = true, TextWrapping = TextWrapping.Wrap,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(15), FontSize = 14, VerticalContentAlignment = VerticalAlignment.Top };
-        new Window { Owner = this, Title = "Passload · Licences", Width = 670, Height = 490, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content }.ShowDialog();
+        new Window { Owner = this, Title = $"Passload · {Locale.Text("Licenses")}", Width = 670, Height = 490, WindowStartupLocation = WindowStartupLocation.CenterOwner, Content = content }.ShowDialog();
     }
 }

@@ -1,16 +1,18 @@
+import {text} from "./language.js";
+
 const memoryLimit = 1024 * 1024;
 let previous;
 
 function createDiskWriter() {
   const worker = new Worker(new URL("./disk.js",import.meta.url));
   const call = (op, buffer) => new Promise((resolve,reject)=>{
-    const timer = setTimeout(()=>reject(new Error("Le stockage local ne répond pas.")), 90_000);
+    const timer = setTimeout(()=>reject(new Error(text("StorageTimeout"))), 90_000);
     worker.onmessage = e => {
       clearTimeout(timer);
       if (e.data.ok) resolve(e.data.result);
-      else reject(new Error("Le navigateur ne peut pas écrire sur le disque de cet appareil."));
+      else reject(new Error(text("DiskWriteFailed")));
     };
-    worker.onerror = () => { clearTimeout(timer); reject(new Error("Le stockage local est indisponible.")); };
+    worker.onerror = () => { clearTimeout(timer); reject(new Error(text("StorageUnavailable"))); };
     worker.postMessage({op,buffer}, buffer ? [buffer] : []);
   });
   return {call, close:()=>worker.terminate()};
@@ -20,7 +22,7 @@ function present(blob, filename, temporaryName) {
   const url = URL.createObjectURL(blob);
   const action = document.getElementById("saved");
   action.href = url; action.download = filename;
-  action.hidden = false; action.textContent = "Enregistrer à nouveau";
+  action.hidden = false; action.textContent = text("SaveAgain");
   action.click();
   const entry = {url};
   previous = entry;
@@ -53,7 +55,7 @@ export async function saveRemote(source, filename, size, mime, progress, destina
     while (true) {
       const {bytes,done} = await source.next();
       count += bytes.byteLength;
-      if (size !== null && (count > size || (done && count !== size))) throw new Error("Téléchargement incomplet.");
+      if (size !== null && (count > size || (done && count !== size))) throw new Error(text("Incomplete"));
       if (!writable && !disk && !diskUnavailable && count > memoryLimit) {
         try {
           disk = createDiskWriter();
@@ -70,7 +72,7 @@ export async function saveRemote(source, filename, size, mime, progress, destina
         if (writable) await writable.write(bytes);
         else if (disk) await disk.call("write",bytes.buffer);
         else {
-          if (count > 64 * 1024 * 1024) throw new Error("Le stockage temporaire de votre navigateur est indisponible. Ouvrez le lien dans une fenêtre normale pour enregistrer ce fichier volumineux.");
+          if (count > 64 * 1024 * 1024) throw new Error(text("TempStorageUnavailable"));
           chunks.push(bytes.buffer);
         }
       }
@@ -80,7 +82,7 @@ export async function saveRemote(source, filename, size, mime, progress, destina
     if (writable) { await writable.close(); writable = null; }
     else if (disk) {
       const {file,name} = await disk.call("finish");
-      if (file.size !== count) throw new Error("Téléchargement incomplet.");
+      if (file.size !== count) throw new Error(text("Incomplete"));
       present(file,filename,name);
     } else present(new Blob(chunks,{type:mime}),filename,null);
     completed = true;

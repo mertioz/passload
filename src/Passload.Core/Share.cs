@@ -1,5 +1,4 @@
 using System.Collections.Concurrent;
-using System.Globalization;
 using System.Net;
 using System.Security.Cryptography;
 using Microsoft.AspNetCore.WebUtilities;
@@ -17,7 +16,7 @@ public sealed record SharedFile(int Id, string Path, string Name, string ZipName
         try
         {
             if (stream.Length != Size || File.GetLastWriteTimeUtc(stream.SafeFileHandle) != ModifiedUtc)
-                throw new IOException("Le fichier a changé depuis la création du lien.");
+                throw new IOException(Locale.Text("FileChanged"));
             return stream;
         }
         catch
@@ -41,7 +40,7 @@ public sealed record SharedFile(int Id, string Path, string Name, string ZipName
                 entry = $"{System.IO.Path.GetFileNameWithoutExtension(name)} ({suffix++}){System.IO.Path.GetExtension(name)}";
             files.Add(new(files.Count, path, name, entry, stream.Length, File.GetLastWriteTimeUtc(stream.SafeFileHandle)));
         }
-        if (files.Count == 0) throw new InvalidOperationException("Choisissez au moins un fichier.");
+        if (files.Count == 0) throw new InvalidOperationException(Locale.Text("ChooseAtLeastOneFile"));
         return files.AsReadOnly();
     }
 }
@@ -57,7 +56,7 @@ public sealed record ShareDetails(string? Title, string? Description)
     {
         title = string.IsNullOrWhiteSpace(title) ? null : title.Trim();
         if (title is not null && (title.Length > Share.MaxTitleLength || title.Any(char.IsControl)))
-            throw new ArgumentException($"Le nom doit tenir sur une ligne de {Share.MaxTitleLength} caractères maximum.");
+            throw new ArgumentException(Locale.Text("InvalidTitle", Share.MaxTitleLength));
         return title;
     }
 
@@ -66,7 +65,7 @@ public sealed record ShareDetails(string? Title, string? Description)
         description = string.IsNullOrWhiteSpace(description) ? null : description.Trim();
         if (description is not null && (description.Length > Share.MaxDescriptionLength ||
             description.Any(c => char.IsControl(c) && c is not ('\t' or '\r' or '\n'))))
-            throw new ArgumentException($"La description doit contenir au maximum {Share.MaxDescriptionLength} caractères.");
+            throw new ArgumentException(Locale.Text("InvalidDescription", Share.MaxDescriptionLength));
         return description;
     }
 }
@@ -90,7 +89,8 @@ public sealed class Share
     public IReadOnlyList<SharedFile> Files { get; }
     public DateTimeOffset ExpiresAt { get; }
     public ShareScope Scope { get; }
-    public string RouteLabel { get; }
+    private readonly string _routeLabel;
+    public string RouteLabel => Locale.Current.Messages.GetValueOrDefault(_routeLabel, _routeLabel);
     public Uri Link { get; }
     public Uri PublishedLink { get; }
     public bool UsesTrustedHttps { get; }
@@ -114,7 +114,7 @@ public sealed class Share
         Ended = _end.Token;
         _end.CancelAfter(duration);
         Scope = scope;
-        RouteLabel = routeLabel;
+        _routeLabel = routeLabel;
         UsesRouter = usesRouter;
         UsesTrustedHttps = trustedHttps;
         RtcRoom = publicWebRtc ? new PublicRtcRoom() : null;
@@ -202,7 +202,7 @@ public sealed class ShareCatalog(DownloadHistory? history = null)
             trustedHttps, details);
         if (_shares.TryAdd(share.Token, share)) return share;
         share.End();
-        throw new InvalidOperationException("Impossible de générer un lien unique.");
+        throw new InvalidOperationException(Locale.Text("UniqueLinkFailed"));
     }
 
     public Share? Find(string token) =>
@@ -227,13 +227,16 @@ public sealed class ShareCatalog(DownloadHistory? history = null)
 
 public static class Display
 {
-    private static readonly string[] Units = ["o", "Ko", "Mo", "Go", "To", "Po"];
-    public static string Size(long bytes)
+    public static string Size(long bytes, Locale? locale = null)
     {
+        locale ??= Locale.Current;
+        var units = locale.Get("ByteUnits").Split(' ');
         double number = bytes;
         var unit = 0;
-        while (number >= 1024 && unit < Units.Length - 1) { number /= 1024; unit++; }
-        return number.ToString(number < 10 && unit > 0 ? "0.#" : "0", CultureInfo.GetCultureInfo("fr-FR")) + " " + Units[unit];
+        while (number >= 1024 && unit < units.Length - 1) { number /= 1024; unit++; }
+        return number.ToString(number < 10 && unit > 0 ? "0.#" : "0", locale.Culture) + " " + units[unit];
     }
-    public static string Count(int count) => count == 1 ? "1 fichier" : $"{count} fichiers";
+
+    public static string Count(int count, Locale? locale = null) =>
+        (locale ?? Locale.Current).Get(count == 1 ? "FileCountOne" : "FileCountMany", count);
 }

@@ -5,6 +5,7 @@ using System.Security.Principal;
 using System.Security.Cryptography;
 using System.Text;
 using System.Windows;
+using Passload.Core;
 
 namespace Passload;
 
@@ -18,8 +19,6 @@ public partial class App : Application
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
-        CultureInfo.CurrentCulture = CultureInfo.GetCultureInfo("fr-FR");
-        CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo("fr-FR");
         if (e.Args is ["--install-update", var previous, var hash, var presentation] && int.TryParse(previous, out var previousId))
         {
             Shutdown(AppUpdate.Install(previousId, hash, presentation == "show"));
@@ -83,7 +82,7 @@ internal static class Firewall
             var executable = Environment.ProcessPath!;
             var installation = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(executable.ToUpperInvariant())).AsSpan(0, 5));
             rule.Name = $"Passload TCP {port} ({installation})";
-            rule.Description = "Téléchargements HTTPS depuis Passload.";
+            rule.Description = Locale.Text("FirewallDescription");
             rule.ApplicationName = executable;
             rule.Protocol = Tcp;
             rule.LocalPorts = port.ToString(CultureInfo.InvariantCulture);
@@ -105,7 +104,7 @@ internal static class Firewall
         try { await RequestAsync(port, cancellation); }
         catch (Win32Exception ex) when (ex.NativeErrorCode == 1223)
         {
-            throw new InvalidOperationException("Windows attend votre autorisation pour le partage par adresse IP.", ex);
+            throw new InvalidOperationException(Locale.Text("FirewallNeedsApproval"), ex);
         }
     }
 
@@ -153,8 +152,8 @@ internal static class Firewall
         var info = new ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = true, Verb = "runas", WindowStyle = ProcessWindowStyle.Hidden };
         info.ArgumentList.Add("--authorize-port");
         info.ArgumentList.Add(port.ToString(CultureInfo.InvariantCulture));
-        using var process = Process.Start(info) ?? throw new InvalidOperationException("Windows n’a pas ouvert la demande.");
+        using var process = Process.Start(info) ?? throw new InvalidOperationException(Locale.Text("FirewallOpenFailed"));
         await process.WaitForExitAsync(cancellation);
-        if (process.ExitCode != 0) throw new InvalidOperationException("Windows n’a pas pu enregistrer la règle de pare-feu.");
+        if (process.ExitCode != 0) throw new InvalidOperationException(Locale.Text("FirewallSaveFailed"));
     }
 }

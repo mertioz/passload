@@ -2,11 +2,19 @@
 <component type="desktop-application">
   <id>site.aymen.Passload</id>
   <name>Passload</name>
-  <summary>Partager des fichiers par lien temporaire</summary>
-  <summary xml:lang="en">Share files with a temporary link</summary>
+  <summary>Share files with a temporary link</summary>
+  <summary xml:lang="fr">Partager des fichiers par lien temporaire</summary>
+  <summary xml:lang="de">Dateien mit einem temporären Link teilen</summary>
+  <summary xml:lang="es">Compartir archivos con un enlace temporal</summary>
+  <summary xml:lang="ja">一時リンクでファイルを共有</summary>
+  <summary xml:lang="zh-CN">使用临时链接共享文件</summary>
   <description>
-    <p>Créez un lien de téléchargement temporaire pour les fichiers que vous choisissez. Les fichiers sont servis depuis votre appareil.</p>
-    <p xml:lang="en">Create temporary download links for the files you select. Downloads are served from your device.</p>
+    <p>Create temporary download links for the files you select. Downloads are served from your device.</p>
+    <p xml:lang="fr">Créez un lien de téléchargement temporaire pour les fichiers que vous choisissez. Les fichiers sont servis depuis votre appareil.</p>
+    <p xml:lang="de">Erstellen Sie temporäre Download-Links für ausgewählte Dateien. Die Dateien werden direkt über Ihr Gerät bereitgestellt.</p>
+    <p xml:lang="es">Crea enlaces de descarga temporales para los archivos que elijas. Las descargas se realizan desde tu dispositivo.</p>
+    <p xml:lang="ja">選んだファイルの一時ダウンロードリンクを作成します。ファイルはお使いの端末から直接配信されます。</p>
+    <p xml:lang="zh-CN">为所选文件创建临时下载链接。接收方直接从你的设备下载文件。</p>
   </description>
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>

@@ -1,5 +1,6 @@
 // Piping Server pairs an outgoing POST and GET. Files use WebRTC unless both
 // peers agree on the encrypted fallback. The public service keeps no share list.
+import {text} from "./language.js";
 import {encode, decode, to64, from64, deferred, sleep} from "./wire.js";
 
 const relay = "https://ppng.io/passload-v2/";
@@ -11,7 +12,7 @@ const digest = async s => to64(new Uint8Array(await crypto.subtle.digest("SHA-25
 async function exchange(path, body, signal, timeout = 32_000, maximum = maxFrame) {
   const timer = new AbortController();
   const abort = () => timer.abort();
-  if (signal.aborted) throw new Error("Partage arrêté.");
+  if (signal.aborted) throw new Error(text("Offline"));
   signal.addEventListener("abort", abort, {once:true});
   const clock = setTimeout(abort, timeout);
   try {
@@ -20,7 +21,7 @@ async function exchange(path, body, signal, timeout = 32_000, maximum = maxFrame
       headers:body ? {"Content-Type":"application/octet-stream"} : {},
       cache:"no-store", referrerPolicy:"no-referrer", redirect:"error"
     });
-    if (!response.ok || !response.body) throw new Error("Le service de mise en relation est indisponible.");
+    if (!response.ok || !response.body) throw new Error(text("SignalingUnavailable"));
     const reader = response.body.getReader();
     const chunks = [];
     let length = 0;
@@ -28,13 +29,13 @@ async function exchange(path, body, signal, timeout = 32_000, maximum = maxFrame
       const part = await reader.read();
       if (part.done) break;
       length += part.value.length;
-      if (length > (body ? 8192 : maximum)) { await reader.cancel(); throw new Error("Réponse invalide."); }
+      if (length > (body ? 8192 : maximum)) { await reader.cancel(); throw new Error(text("InvalidReply")); }
       chunks.push(part.value);
     }
     const bytes = new Uint8Array(length);
     let index = 0;
     for (const block of chunks) { bytes.set(block,index); index += block.length; }
-    if (body && decode(bytes).includes("[ERROR]")) throw new Error("La transmission a été interrompue.");
+    if (body && decode(bytes).includes("[ERROR]")) throw new Error(text("TransferInterrupted"));
     return bytes;
   } finally {
     clearTimeout(clock); signal.removeEventListener("abort",abort);
@@ -50,7 +51,7 @@ async function seal(key, label, bytes) {
   return packet;
 }
 async function unseal(key, label, packet) {
-  if (packet.length < 28) throw new Error("Trame incomplète.");
+  if (packet.length < 28) throw new Error(text("InvalidReply"));
   return new Uint8Array(await crypto.subtle.decrypt({name:"AES-GCM", iv:packet.subarray(0,12), additionalData:encode(label)}, key, packet.subarray(12)));
 }
 async function channel(privateKey, otherPublic, salt, id) {
@@ -66,7 +67,7 @@ export class Meeting {
   static async create(options, event, frame, offline) {
     const instance = new Meeting(options, event, frame, offline);
     instance.salt = from64(options.key);
-    if (instance.salt.length !== 32 || from64(options.room).length !== 65) throw new Error("Lien incomplet.");
+    if (instance.salt.length !== 32 || from64(options.room).length !== 65) throw new Error(text("LinkIncomplete"));
     instance.inviteKey = await crypto.subtle.importKey("raw",instance.salt,"AES-GCM",false,["encrypt","decrypt"]);
     instance.knock = await digest("passload/v2/rendezvous/" + options.room + "/" + options.key);
     setTimeout(() => instance.start().catch(error => {
@@ -88,7 +89,7 @@ export class Meeting {
       // Confirm the actual two-way public path before telling the desktop to copy a link.
       const test = "check/" + to64(random(24)), challenge = random(24);
       const [echo] = await Promise.all([exchange(test, null, signal, 9500, 128),exchange(test, challenge, signal, 9500)]);
-      if (to64(echo) !== to64(challenge)) throw new Error("La mise en relation n’a pas pu être vérifiée.");
+      if (to64(echo) !== to64(challenge)) throw new Error(text("SignalingUnverified"));
       void this.listen();
       this.ready.resolve({relay:this.options.relay});
       return;
@@ -113,7 +114,7 @@ export class Meeting {
     };
     const [answer] = await Promise.all([welcome,introduce()]);
     const info = JSON.parse(decode(await unseal(peer.key,"hello/"+id,answer)));
-    if (!Number.isFinite(info.until) || info.until <= Date.now()) throw new Error("Ce lien a expiré.");
+    if (!Number.isFinite(info.until) || info.until <= Date.now()) throw new Error(text("Expired"));
     this.relay = info.relay === true;
     const ready = {op:"ready",peer:id,relay:this.relay};
     await this.event(ready);
@@ -172,7 +173,7 @@ export class Meeting {
   }
   send(id, kind, body) {
     const peer = this.peers.get(id);
-    if (!peer || this.stopped || (kind === 2 && !(this.host ? this.options.relay : this.relay))) return Promise.reject(new Error("Connexion indisponible."));
+    if (!peer || this.stopped || (kind === 2 && !(this.host ? this.options.relay : this.relay))) return Promise.reject(new Error(text("ConnectionUnavailable")));
     peer.queue = peer.queue.then(async () => {
       const label = (this.host ? "h/" : "g/") + peer.sent++;
       const plain = new Uint8Array(body.length+1);

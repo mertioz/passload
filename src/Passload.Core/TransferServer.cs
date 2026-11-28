@@ -107,6 +107,8 @@ public sealed class TransferServer : IAsyncDisposable
             "/engine/host.js" => "host.js",
             "/engine/wire.js" or "/recevoir/wire.js" => "wire.js",
             "/engine/pipe.js" or "/recevoir/pipe.js" => "pipe.js",
+            "/engine/language.js" or "/recevoir/language.js" => "language.js",
+            "/engine/locales.json" or "/recevoir/locales.json" => "locales.json",
             "/engine/socket-meeting.js" => "socket-meeting.js",
             "/recevoir/" => "index.html",
             "/recevoir/style.css" => "style.css",
@@ -136,7 +138,13 @@ public sealed class TransferServer : IAsyncDisposable
 
     private static async Task ServeAssetAsync(HttpContext ctx, string asset)
     {
-        ctx.Response.ContentType = asset switch { "style.css" => "text/css", "index.html" => "text/html; charset=utf-8", _ => "text/javascript; charset=utf-8" };
+        ctx.Response.ContentType = asset switch
+        {
+            "style.css" => "text/css",
+            "index.html" => "text/html; charset=utf-8",
+            "locales.json" => "application/json; charset=utf-8",
+            _ => "text/javascript; charset=utf-8"
+        };
         if (HttpMethods.IsHead(ctx.Request.Method)) return;
         using var resource = typeof(TransferServer).Assembly.GetManifestResourceStream("Passload." + asset)!;
         await resource.CopyToAsync(ctx.Response.Body, ctx.RequestAborted);
@@ -186,11 +194,11 @@ public sealed class TransferServer : IAsyncDisposable
                     var socket = (ctx.Request.IsHttps ? "wss://" : "ws://") + ctx.Request.Host;
                     response.Headers["Content-Security-Policy"] = $"default-src 'none'; style-src 'unsafe-inline'; script-src 'self'; worker-src 'self'; connect-src 'self' {socket}; frame-ancestors 'none'; base-uri 'none'; form-action 'none'";
                 }
-                await Html(ctx, 200, Landing(share));
+                await Html(ctx, 200, Landing(share, BrowserLocale(ctx)));
                 return;
             }
             if (share.UsesPublicWebRtc && parts.Length == 5 && parts[3] == "assets" &&
-                parts[4] is "public-receive.js" or "incoming.js" or "socket-meeting.js" or "wire.js" or "save.js" or "disk.js")
+                parts[4] is "public-receive.js" or "incoming.js" or "socket-meeting.js" or "wire.js" or "save.js" or "disk.js" or "language.js" or "locales.json")
             {
                 await ServeAssetAsync(ctx, parts[4]);
                 return;
@@ -231,7 +239,7 @@ public sealed class TransferServer : IAsyncDisposable
             {
                 response.ContentLength = null;
                 response.Headers.Remove(HeaderNames.ContentDisposition);
-                await Html(ctx, 409, ErrorPage("Fichier indisponible", "Un fichier a été déplacé, modifié ou verrouillé. Demandez un nouveau lien à l’expéditeur."));
+                await Html(ctx, 409, ErrorPage(BrowserLocale(ctx), "FileUnavailable", "FileUnavailableHint"));
             }
         }
     }
@@ -273,8 +281,14 @@ public sealed class TransferServer : IAsyncDisposable
         }
     }
 
-    private static Task Unavailable(HttpContext ctx) => Html(ctx, 404, ErrorPage("Lien indisponible",
-        "Ce lien a expiré, a été désactivé ou ne correspond à aucun partage. Demandez un nouveau lien à l’expéditeur."));
+    private static Task Unavailable(HttpContext ctx) =>
+        Html(ctx, 404, ErrorPage(BrowserLocale(ctx), "LinkUnavailable", "LinkUnavailableHint"));
+
+    private static Locale BrowserLocale(HttpContext ctx) => ctx.Request.GetTypedHeaders().AcceptLanguage
+        .Where(value => (value.Quality ?? 1) > 0)
+        .OrderByDescending(value => value.Quality ?? 1)
+        .Select(value => Locale.Match(value.Value.Value))
+        .FirstOrDefault(value => value is not null) ?? Locale.English;
 
     private static async Task Html(HttpContext ctx, int status, string page)
     {
@@ -283,35 +297,42 @@ public sealed class TransferServer : IAsyncDisposable
         if (!HttpMethods.IsHead(ctx.Request.Method)) await ctx.Response.WriteAsync(page, ctx.RequestAborted);
     }
 
-    private static string Landing(Share share)
+    private static string Landing(Share share, Locale locale)
     {
         var basePath = "/s/" + share.Token;
         var items = new StringBuilder();
+        var download = WebUtility.HtmlEncode(locale.Web("Download"));
         foreach (var file in share.Files)
         {
             var name = WebUtility.HtmlEncode(file.Name);
             var rtc = share.UsesPublicWebRtc ? $" data-item='{file.Id}' data-size='{file.Size}' data-name='{name}'" : "";
-            items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='Télécharger {name}'{rtc}>Télécharger</a></li>");
+            var label = WebUtility.HtmlEncode(locale.Web("DownloadFile", file.Name));
+            items.Append($"<li><div><b>{name}</b><small>{Display.Size(file.Size, locale)}</small></div><a class='pick' href='{basePath}/files/{file.Id}' aria-label='{label}'{rtc}>{download}</a></li>");
         }
         var single = share.Files.Count == 1;
         var details = share.Details;
-        var title = details.Title ?? (single ? "Un fichier partagé" : $"{share.Files.Count} fichiers partagés");
-        var volume = details.Title is null ? Display.Size(share.TotalSize) : $"{Display.Count(share.Files.Count)} · {Display.Size(share.TotalSize)}";
+        var title = details.Title ?? locale.Web(single ? "SharedOne" : "SharedMany", share.Files.Count);
+        var size = Display.Size(share.TotalSize, locale);
+        var volume = details.Title is null ? size : $"{Display.Count(share.Files.Count, locale)} · {size}";
         var description = details.Description is null ? "" : $"<p class='description'>{WebUtility.HtmlEncode(details.Description)}</p>";
-        var expiry = share.ExpiresAt.UtcDateTime.ToString("dd MMM yyyy 'à' HH:mm 'UTC'", CultureInfo.GetCultureInfo("fr-FR"));
+        var expiry = WebUtility.HtmlEncode(locale.Web("Expiry", share.ExpiresAt.UtcDateTime.ToString("g", locale.Culture) + " UTC"));
+        var privacy = WebUtility.HtmlEncode(locale.Web("Tracking"));
         var zipRtc = share.UsesPublicWebRtc ? $" data-item='zip' data-size='{share.TotalSize}' data-name='Passload.zip'" : "";
-        var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'{zipRtc}>Tout télécharger en ZIP</a>";
+        var bundle = single ? "" : $"<a class='main' href='{basePath}/all.zip'{zipRtc}>{WebUtility.HtmlEncode(locale.Web("DownloadZip"))}</a>";
         var status = share.UsesPublicWebRtc ? "<p id='status' role='status' hidden></p><a id='saved' class='note' hidden></a>" : "";
         var script = share.UsesPublicWebRtc ? $"<script type='module' src='{basePath}/assets/public-receive.js'></script>" : "";
-        var body = $"<h1>{WebUtility.HtmlEncode(title)}</h1><p>{volume}</p>{description}{status}<ul>{items}</ul>{bundle}<p class='note'>Expire le {expiry}</p><p class='note'>L’expéditeur peut consulter les transferts terminés, leur heure et l’adresse IP observée.</p>{script}";
-        return Page(title, body);
+        var body = $"<h1>{WebUtility.HtmlEncode(title)}</h1><p>{volume}</p>{description}{status}<ul>{items}</ul>{bundle}<p class='note'>{expiry}</p><p class='note'>{privacy}</p>{script}";
+        return Page(locale, title, body);
     }
 
-    private static string ErrorPage(string title, string message) =>
-        Page(title, $"<h1>{title}</h1><p class='intro'>{message}</p>");
+    private static string ErrorPage(Locale locale, string titleKey, string messageKey)
+    {
+        var title = locale.Web(titleKey);
+        return Page(locale, title, $"<h1>{WebUtility.HtmlEncode(title)}</h1><p class='intro'>{WebUtility.HtmlEncode(locale.Web(messageKey))}</p>");
+    }
 
-    private static string Page(string title, string body) =>
-        Template.Replace("<!--page-title-->", WebUtility.HtmlEncode(title)).Replace("<!--content-->", body);
+    private static string Page(Locale locale, string title, string body) =>
+        Template.Replace("<!--language-->", locale.Name).Replace("<!--page-title-->", WebUtility.HtmlEncode(title)).Replace("<!--content-->", body);
 
     private static string LoadTemplate()
     {

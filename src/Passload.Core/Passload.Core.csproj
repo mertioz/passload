@@ -6,6 +6,7 @@
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Mono.Nat" Version="3.0.4" />
     <EmbeddedResource Include="Recipient.html" />
+    <EmbeddedResource Include="Locales/*.json" LogicalName="Passload.Locale.%(Filename).json" />
     <EmbeddedResource Include="Peer/host.js" LogicalName="Passload.host.js" />
     <EmbeddedResource Include="../../docs/recevoir/*" LogicalName="Passload.%(Filename)%(Extension)" />
   </ItemGroup>

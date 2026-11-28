@@ -60,9 +60,20 @@ try
         UseProxy = false, AllowAutoRedirect = false,
         ServerCertificateCustomValidationCallback = (_, cert, _, _) => cert?.GetCertHashString(HashAlgorithmName.SHA256) == server.Fingerprint
     });
+    http.DefaultRequestHeaders.AcceptLanguage.ParseAdd("fr-FR");
     var page = await http.GetStringAsync(address);
-    Check(page.Contains("Tout télécharger en ZIP") && WebUtility.HtmlDecode(page).Contains("été & lumière.txt"), "page web et noms accentués");
+    Check(WebUtility.HtmlDecode(page).Contains("Tout télécharger en ZIP") && WebUtility.HtmlDecode(page).Contains("été & lumière.txt"), "page web et noms accentués");
     Check(!page.Contains(folder.FullName, StringComparison.OrdinalIgnoreCase) && !page.Contains(share.Link.Fragment), "chemins locaux et empreinte absents de la page");
+    foreach (var locale in Locale.Supported)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, address);
+        request.Headers.AcceptLanguage.ParseAdd($"it-IT, {locale.Name};q=0.9, fr;q=0.4");
+        using var reply = await http.SendAsync(request);
+        var localized = WebUtility.HtmlDecode(await reply.Content.ReadAsStringAsync());
+        Check(reply.IsSuccessStatusCode && localized.Contains($"lang=\"{locale.Name}\"") &&
+            localized.Contains(locale.Web("DownloadZip")) && localized.Contains("été & lumière.txt"),
+            $"page de réception localisée ({locale.Name})");
+    }
     share.UpdateDetails("Une sélection <privée>", "Une description <script>\nDeuxième ligne.");
     var decorated = await http.GetStringAsync(address);
     Check(share.Link.GetLeftPart(UriPartial.Path) == address && WebUtility.HtmlDecode(decorated).Contains("<title>Une sélection <privée></title>"),
@@ -186,6 +197,7 @@ try
         var localOrigin = new Uri($"http://127.0.0.1:{engine.Port}");
         var preview = privateCatalog.Add(SharedFile.Select([file]),TimeSpan.FromMinutes(1),ShareScope.Internet,localOrigin,"","Internet");
         using var browser = new HttpClient {BaseAddress=localOrigin};
+        browser.DefaultRequestHeaders.AcceptLanguage.ParseAdd("fr-FR");
         var localBase = $"/s/{preview.Token}";
         Check(WebUtility.HtmlDecode(await browser.GetStringAsync(localBase)).Contains("Un fichier partagé"),
             "aperçu sur le PC expéditeur sans rebouclage de la box");

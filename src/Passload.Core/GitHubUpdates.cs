@@ -29,14 +29,14 @@ public static class GitHubUpdates
         metadata.EnsureSuccessStatusCode();
         var release = await metadata.Content.ReadFromJsonAsync<Release>(cancellationToken: stop).ConfigureAwait(false);
         if (release?.Tag is not { } tag || !tag.StartsWith('v') || !Version.TryParse(tag[1..], out var parsed))
-            throw new InvalidDataException("La version publiée sur GitHub est illisible.");
+            throw new InvalidDataException(Locale.Text("UpdateVersionInvalid"));
         var next = new Version(parsed.Major, parsed.Minor, Math.Max(0, parsed.Build), Math.Max(0, parsed.Revision));
         if (next <= CurrentVersion) return null;
 
         var asset = release.Assets?.SingleOrDefault(item => item.Name == assetName);
         if (asset is not { Size: > 0 and <= MaximumSize } || asset.Digest is not { Length: 71 } digest ||
             !digest.StartsWith("sha256:", StringComparison.Ordinal) || !digest[7..].All(Uri.IsHexDigit))
-            throw new InvalidDataException("Le fichier de cette plateforme et son empreinte SHA-256 sont requis dans la version publiée.");
+            throw new InvalidDataException(Locale.Text("UpdateAssetMissing"));
 
         var address = new Uri(Downloads + Uri.EscapeDataString(tag) + "/" + Uri.EscapeDataString(assetName));
         return new ReleaseAsset(next, address, asset.Size, digest[7..].ToUpperInvariant());
@@ -61,14 +61,14 @@ public static class GitHubUpdates
                 while ((count = await input.ReadAsync(buffer, timeout.Token).ConfigureAwait(false)) > 0)
                 {
                     length += count;
-                    if (length > asset.Size) throw new InvalidDataException("Le fichier téléchargé dépasse la taille annoncée.");
+                    if (length > asset.Size) throw new InvalidDataException(Locale.Text("UpdateTooLarge"));
                     await output.WriteAsync(buffer.AsMemory(0, count), timeout.Token).ConfigureAwait(false);
                 }
-                if (length != asset.Size) throw new InvalidDataException("Le téléchargement de la mise à jour est incomplet.");
+                if (length != asset.Size) throw new InvalidDataException(Locale.Text("UpdateIncomplete"));
             }
             await using var content = File.OpenRead(destination);
             var actual = Convert.ToHexString(await SHA256.HashDataAsync(content, timeout.Token).ConfigureAwait(false));
-            if (actual != asset.Sha256) throw new InvalidDataException("L’empreinte SHA-256 de la mise à jour est incorrecte.");
+            if (actual != asset.Sha256) throw new InvalidDataException(Locale.Text("UpdateChecksumError"));
         }
         catch
         {

@@ -119,7 +119,7 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares)
                             share.RecordWebRtcDownload(id, msg.GetProperty("address").GetString(), relayed: false);
                         break;
                     case "failed":
-                        if (_starting.TryGetValue(token, out var failure)) failure.TrySetException(new IOException(msg.GetProperty("detail").GetString()));
+                        if (_starting.TryGetValue(token, out var failure)) failure.TrySetException(new IOException(Locale.Text("WebRtcUnavailable")));
                         break;
                 }
             };
@@ -128,7 +128,7 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares)
                 if (!ReferenceEquals(_view, view)) return;
                 if (e.ProcessFailedKind is not (CoreWebView2ProcessFailedKind.BrowserProcessExited or CoreWebView2ProcessFailedKind.RenderProcessExited)) return;
                 _booted = false;
-                var error = new IOException("Le moteur de transfert s’est arrêté. Recréez le lien.");
+                var error = new IOException(Locale.Text("EngineStopped"));
                 started.TrySetException(error);
                 foreach (var waiter in _starting.Values) waiter.TrySetException(error);
                 _offline.UnionWith(_publicSessions);
@@ -141,7 +141,7 @@ internal sealed class InternetSharing(Grid container, ShareService publicShares)
         catch (WebView2RuntimeNotFoundException ex)
         {
             await ReleaseEngineAsync();
-            throw new IOException("Installez Microsoft Edge WebView2 pour créer un lien Internet depuis ce PC.", ex);
+            throw new IOException(Locale.Text("InstallWebView"), ex);
         }
         catch { await ReleaseEngineAsync(); throw; }
     }

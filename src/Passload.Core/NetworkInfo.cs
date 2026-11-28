@@ -81,7 +81,7 @@ public sealed record NetworkInfo(IPAddress? LanAddress, IPAddress? PublicV4, IPA
     public static string? NormalizePublicHost(string? input)
     {
         if (string.IsNullOrWhiteSpace(input)) return null;
-        const string message = "Indiquez un nom de domaine complet pour le certificat HTTPS.";
+        var message = Locale.Text("InvalidDomain");
         string host;
         try { host = new IdnMapping { UseStd3AsciiRules = true }.GetAscii(input.Trim().TrimEnd('.')).ToLowerInvariant(); }
         catch (ArgumentException) { throw new FormatException(message); }
@@ -94,12 +94,12 @@ public sealed record NetworkInfo(IPAddress? LanAddress, IPAddress? PublicV4, IPA
     {
         if (origin.IdnHost.Equals(host, StringComparison.OrdinalIgnoreCase)) return origin;
         if (!IPAddress.TryParse(origin.IdnHost, out var address))
-            throw new InvalidOperationException("L’adresse publique manuelle doit utiliser le même nom de domaine que le certificat HTTPS.");
+            throw new InvalidOperationException(Locale.Text("AddressCertificateMismatch"));
         IPAddress[] addresses;
         try { addresses = await Dns.GetHostAddressesAsync(host, cancellation).ConfigureAwait(false); }
-        catch (SocketException ex) { throw new InvalidOperationException($"Le DNS de {host} est indisponible.", ex); }
+        catch (SocketException ex) { throw new InvalidOperationException(Locale.Text("DnsUnavailable", host), ex); }
         if (!addresses.Contains(address))
-            throw new InvalidOperationException($"Le DNS de {host} doit pointer vers l’adresse publique de cette connexion.");
+            throw new InvalidOperationException(Locale.Text("DnsWrongAddress", host));
         return new UriBuilder(origin) { Host = host }.Uri;
     }
 
@@ -107,7 +107,7 @@ public sealed record NetworkInfo(IPAddress? LanAddress, IPAddress? PublicV4, IPA
     {
         if (string.IsNullOrWhiteSpace(input)) return null;
         input = input.Trim();
-        const string message = "Indiquez une adresse IP publique ou un nom de domaine, avec éventuellement un port.";
+        var message = Locale.Text("InvalidPublicAddress");
         if (IPAddress.TryParse(input.Trim('[', ']'), out var raw))
             return IsPublic(raw) ? Origin(raw, defaultPort) : throw new FormatException(message);
         if (!input.Contains("://", StringComparison.Ordinal)) input = "https://" + input;
